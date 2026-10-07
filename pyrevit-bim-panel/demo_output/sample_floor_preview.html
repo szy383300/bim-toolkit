@@ -1,0 +1,15 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<title>DWG 翻模预览（演示）</title>
+<style>body{font-family:system-ui,'Microsoft YaHei',sans-serif;margin:24px;color:#222}
+h1{font-size:20px}table{border-collapse:collapse;margin:10px 0;font-size:14px}
+th{background:#2b6cb0;color:#fff}td,th{border:1px solid #ccc;padding:6px 10px}
+.mature{color:#2f855a;font-weight:600}.exp{color:#c05621}
+.note{color:#666;font-size:13px}</style></head><body>
+<h1>📐 DWG 翻模预览（演示，未写入 Revit）</h1>
+<p class="note">来源：<code>sample_floor.dwg</code> ｜ 图纸实体 10 个 ｜ 楼层候选：1F、2F</p>
+<h2>计划建模：10 个</h2>
+<table border='1' cellspacing='0' cellpadding='6'><thead><th>类型</th><th>数量</th><th>可靠性</th></thead><tbody><tr><td>grid</td><td>2</td><td>mature</td></tr><tr><td>wall</td><td>2</td><td>mature</td></tr><tr><td>column</td><td>5</td><td>mature</td></tr><tr><td>door</td><td>1</td><td>experimental</td></tr></tbody></table>
+
+<p class="note">说明：mature=接口稳可直建（轴网/墙/柱）；experimental=试建、失败仅上报不中断
+（门/窗/房间/板）。真实写入需在 Revit 内点「DWG翻模」按钮并确认。</p>
+</body></html>

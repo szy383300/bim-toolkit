@@ -1,0 +1,41 @@
+{
+  "fire": {
+    "max_height_m": 100,
+    "max_floor_height_m": 6,
+    "building_type": "多层/高层",
+    "fire_rating_required": true,
+    "standard_ref": "GB50016-2014"
+  },
+  "seismic": {
+    "max_height_m": 50,
+    "applicable_struct_type": "框架",
+    "drift_limit_frame": 0.001818,
+    "drift_limit_shear_wall": 0.001,
+    "standard_ref": "GB50011-2010"
+  },
+  "structure": {
+    "min_wall_thickness_mm": 160,
+    "min_slab_span_ratio": 0.0333,
+    "concrete_min_grade": "C25",
+    "rebar_min_ratio": 0.002,
+    "standard_ref": "GB50010-2010"
+  },
+  "energy": {
+    "min_wall_insulation_mm": 0,
+    "max_u_value_wall": 0.6,
+    "max_u_value_roof": 0.45,
+    "max_u_value_window": 2.5,
+    "standard_ref": "GB50176"
+  },
+  "area": {
+    "calculation_rules": "GBT50353-2013",
+    "balcony_ratio": 0.5,
+    "height_threshold_mm": 2100
+  },
+  "cost_ref": {
+    "labor_per_day": 350,
+    "concrete_per_m3": 450,
+    "steel_per_ton": 4200,
+    "formwork_per_m2": 45
+  }
+}

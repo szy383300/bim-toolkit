@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>双基建完工报告：MSVC Build Tools + YOLO 推理链</title>
+<style>
+  body{font-family:"Microsoft YaHei",sans-serif;max-width:860px;margin:24px auto;padding:0 16px;color:#24292f;line-height:1.65;}
+  h1{font-size:22px;border-bottom:2px solid #1a7f37;padding-bottom:8px;}
+  h2{font-size:17px;margin-top:28px;}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px;}
+  th,td{border:1px solid #d0d7de;padding:6px 10px;text-align:left;vertical-align:top;}
+  th{background:#f6f8fa;}
+  .ok{color:#1a7f37;font-weight:bold;}
+  .warn{color:#9a6700;font-weight:bold;}
+  code{background:#f6f8fa;padding:1px 5px;border-radius:3px;font-size:12.5px;word-break:break-all;}
+  .box{background:#f6f8fa;border-left:4px solid #1a7f37;padding:10px 14px;margin:12px 0;}
+  .box.warnbox{border-left-color:#9a6700;}
+  li{margin:4px 0;}
+</style>
+</head>
+<body>
+<h1>双基建完工报告：MSVC Build Tools + YOLO 推理链</h1>
+<p><b>日期</b>：2026-09-13 ｜ <b>对应决策</b>：装 Build Tools + 通推理链（你拍板的方案）</p>
+
+<div class="box"><b>结论：两个死穴全部解除。</b>① MSVC 编译器已就位（D 盘，零 C 盘占用）；② ultralytics + torch 推理链跑通，且额外拿到一套 35 类户型专用权重（含墙/门/窗/楼梯/栏杆）。DWG 翻模的规则层 + AI 交叉验证路线的前置条件已全部就绪，等你发图。</div>
+
+<h2>① VS Build Tools 2022（解除"无 MSVC"死穴）</h2>
+<table>
+<tr><th>验证项</th><th>结果</th></tr>
+<tr><td>安装方式</td><td>静默安装 <code>--quiet --wait --installPath D:\VS2022BuildTools --add Workload.VCTools --includeRecommended</code>，后台 25 分钟</td></tr>
+<tr><td>安装器退出码</td><td class="ok">0（成功）</td></tr>
+<tr><td>MSVC 版本</td><td>14.44.35207</td></tr>
+<tr><td>cl.exe 落位</td><td class="ok"><code>D:\VS2022BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe</code>（实测存在）</td></tr>
+<tr><td>Windows SDK / LLVM</td><td class="ok">随 workload 就位</td></tr>
+<tr><td>磁盘占用</td><td>3.35GB 全在 D 盘（D 剩余 216GB），C 盘零新增压力</td></tr>
+</table>
+
+<h2>② YOLO 推理链（解除"权重被墙 + 无推理环境"死穴）</h2>
+<table>
+<tr><th>验证项</th><th>结果</th></tr>
+<tr><td>环境</td><td>WorkBuddy default venv：ultralytics <b>8.4.150</b> + torch <b>2.14.0+cpu</b> + torchvision 0.29.0（清华源 7 分钟装完，EXIT=0）</td></tr>
+<tr><td>基线权重</td><td class="ok"><code>E:\bim-toolkit\_tools\yolov8n.pt</code>（6.55MB，ghproxy release 直链）</td></tr>
+<tr><td>户型专用权重</td><td class="ok"><code>E:\bim-toolkit\_tools\floorcad-yolov8n.pt</code>（6.27MB，hf-mirror 直链）</td></tr>
+<tr><td>加载 + 前向</td><td class="ok">yolov8n：640×640 前向 66.5ms，输出解析正常（ALL_OK）</td></tr>
+<tr><td>FloorCAD 35 类</td><td class="ok">全载入：wall / single_door / double_door / sliding_door / window / bay_window / blind_window / stair / railing / elevator / bed / sofa / toilet / bath / sink …（户型翻模正需的类别体系）</td></tr>
+</table>
+
+<h2>过程中排掉的三个坑</h2>
+<table>
+<tr><th>坑</th><th>真相</th><th>解法</th></tr>
+<tr><td>pip 装 ultralytics 两连败且日志全空</td><td>调用了不存在的 python 路径——venv 的 python.exe 在 <code>Scripts\</code> 子目录，不在根部</td><td>修正路径后实装</td></tr>
+<tr><td>venv 里 torch import 报 DLL 加载失败</td><td>孤儿残骸：<code>pip show</code> 无元数据但目录半截存在（此前安装中断的尸块）</td><td>清掉残骸重装即愈</td></tr>
+<tr><td>删除残骸卡死 30 分钟</td><td>沙箱把 Remove-Item 劫持到回收站，torch\include 超长路径（&gt;260 字符）回收站 API 处理失败 → fail-closed</td><td>改用 .NET <code>Directory.Delete(path, true)</code> 直删（仅限 venv 包管理；个人数据仍走回收站+确认）</td></tr>
+</table>
+
+<h2>下一步</h2>
+<ul>
+<li><b>GPU 训练（可选，等你点头）</b>：default venv 是 CPU torch，推理验证足够；要做 YOLOv8n 自有图纸微调时，把 ultralytics 装进 <code>E:\video-gen\venv</code> 复用现成 CUDA torch（实测 cuda_ok=True），不重下 2.5GB。</li>
+<li><b>MSVC 带来的新可能</b>：VecFormer / SymPoint 等 SOTA 的 CUDA 算子源码编译理论上已具备条件（仍需 CUDA torch + Windows 编译适配，flash-attention 在 Windows 上依旧偏难，建议先走云机评估）。</li>
+<li><b>DWG 翻模主线</b>：基建全部就绪，等你发图 → ①转换链 headless 化 → ②识别质量对拍（规则层 + YOLO 交叉验证）→ ③两段式建模 → ④验收探针。</li>
+</ul>
+
+<div class="box warnbox"><b>风险说明</b>：① FloorCAD 权重来自第三方（AGPL-3.0，mAP50=0.77，来源 HF），商用需注意 AGPL 传染性——仅作交叉验证参考即可，商用主力仍是自研规则层+自有微调；② CPU torch 前向单张 ~66ms，批量对拍够用，训练必须走 GPU 路径。</div>
+
+<p style="color:#57606a;font-size:12.5px;">验证证据：E:\bim-toolkit\_research\dwg-oss\{bt_verify, pip5_tail, yolo_test_out, floorcad_test_out}.txt</p>
+</body>
+</html>

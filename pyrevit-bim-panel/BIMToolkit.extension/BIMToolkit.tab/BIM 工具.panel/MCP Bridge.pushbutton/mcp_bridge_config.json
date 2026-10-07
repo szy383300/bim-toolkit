@@ -1,0 +1,8 @@
+{
+  "_readme": "MCP Bridge 策略配置。改完必须重新点一次 Revit 里的 MCP Bridge 按钮才生效。",
+  "_policy": "safe=只读 | build=只读+有语义的写 | dev=全开（含 execute_code / delete_elements）。",
+  "_why_dev": "genbuild（配置建模按钮）的配方是 17 处 execute_code，必须 dev 档。不用 genbuild 时可降到 build 甚至 safe。",
+  "_allow_execute_code": "旧字段，v7.13.0 起仅在没有 policy 时用于推导（true->dev, false->build）。",
+  "policy": "dev",
+  "allow_execute_code": true
+}

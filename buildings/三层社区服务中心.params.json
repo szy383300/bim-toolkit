@@ -1,0 +1,54 @@
+{
+    "_readme": "用 model_builder 建一栋新楼（不需要 MCP 桥）。字段含义见 lib/model_builder.py。",
+    "_design": "三层社区服务中心：18m x 12m，层高 3.6m，井字内墙分隔，双坡屋面 25 度，南向阳台。",
+    "building_info": {
+        "building_name": "三层社区服务中心",
+        "total_floors": 3,
+        "floor_height_mm": 3600,
+        "footprint_length_m": 18.0,
+        "footprint_width_m": 12.0,
+        "interior_walls": [
+            { "start_x_m": 6.0,  "start_y_m": 0.0,  "end_x_m": 6.0,  "end_y_m": 12.0, "thickness_mm": 200 },
+            { "start_x_m": 12.0, "start_y_m": 0.0,  "end_x_m": 12.0, "end_y_m": 12.0, "thickness_mm": 200 },
+            { "start_x_m": 0.0,  "start_y_m": 6.0,  "end_x_m": 18.0, "end_y_m": 6.0,  "thickness_mm": 200 },
+            { "start_x_m": 0.0,  "start_y_m": 3.0,  "end_x_m": 6.0,  "end_y_m": 3.0,  "thickness_mm": 120 },
+            { "start_x_m": 12.0, "start_y_m": 9.0,  "end_x_m": 18.0, "end_y_m": 9.0,  "thickness_mm": 120 }
+        ],
+        "balcony": {
+            "enabled": true,
+            "width_mm": 1800,
+            "length_mm": 6000
+        }
+    },
+    "structural_system": {
+        "wall_thickness_mm": 240,
+        "foundation_type": "条形基础"
+    },
+    "roof": {
+        "type": "gable",
+        "slope_angle_deg": 25,
+        "overhang_mm": 500
+    },
+    "openings": {
+        "windows": {
+            "width_mm": 1800,
+            "height_mm": 1800,
+            "sill_height_mm": 900,
+            "count_per_wall": [4, 3, 4, 3]
+        },
+        "doors": {
+            "entry": {
+                "width_mm": 1500,
+                "height_mm": 2400
+            },
+            "interior": {
+                "width_mm": 900,
+                "height_mm": 2100,
+                "count_per_floor": 6
+            }
+        }
+    },
+    "location": "中国",
+    "seismic_intensity": 7,
+    "fire_resistance": 2
+}

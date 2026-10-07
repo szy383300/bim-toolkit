@@ -1,0 +1,110 @@
+schema: 1
+name: 三层白色别墅
+note: 三层白色坡屋顶别墅 (2026-09-12 设计, 09-13 门亭改双柱); 10800x7200,
+  层高3000; 外墙t240白饰/内墙t120; 南向门亭(400方柱x2)+雨篷+双开门,
+  L2南阳台+栏杆; 双坡屋面体量(freeform, 挑檐600, 30度);
+  验收基线 墙15 门5 窗22 板8 梯2 柱2 通用体1
+expect_doc: 白色别墅
+takeover: true
+save_path: E:\bim-toolkit\models\白色别墅.rvt
+levels:
+- {name: 标高 1, elev: 0}
+- {name: 标高 2, elev: 3000}
+- {name: 标高 3, elev: 6000}
+- {name: 屋顶, elev: 9000}
+walls:
+- level: 标高 1
+  t: 240
+  h: 3000
+  segs: [[0, 0, 10800, 0], [0, 7200, 10800, 7200], [0, 0, 0, 7200],
+    [10800, 0, 10800, 7200]]
+- level: 标高 2
+  t: 240
+  h: 3000
+  segs: [[0, 0, 10800, 0], [0, 7200, 10800, 7200], [0, 0, 0, 7200],
+    [10800, 0, 10800, 7200]]
+- level: 标高 3
+  t: 240
+  h: 3000
+  segs: [[0, 0, 10800, 0], [0, 7200, 10800, 7200], [0, 0, 0, 7200],
+    [10800, 0, 10800, 7200]]
+- level: 标高 1
+  t: 120
+  h: 3000
+  segs: [[5400, 0, 5400, 7200]]
+- level: 标高 2
+  t: 120
+  h: 3000
+  segs: [[5400, 0, 5400, 7200]]
+- level: 标高 3
+  t: 120
+  h: 3000
+  segs: [[5400, 0, 5400, 7200]]
+floors:
+- {level: 标高 1, points: [[0, 0], [10800, 0], [10800, 7200], [0, 7200]],
+  structural: true}
+- {level: 标高 2, points: [[0, 0], [10800, 0], [10800, 7200], [0, 7200]]}
+- {level: 标高 3, points: [[0, 0], [10800, 0], [10800, 7200], [0, 7200]]}
+- {level: 标高 2, points: [[2400, -1500], [6000, -1500], [6000, 0], [2400, 0]],
+  tag: balcony}
+- {level: 标高 1, points: [[6300, -1800], [9300, -1800], [9300, 0], [6300, 0]],
+  tag: porch}
+- {level: 标高 2, points: [[6300, -1800], [9300, -1800], [9300, 0], [6300, 0]],
+  tag: canopy}
+stairs:
+- {from: 标高 1, to: 标高 2, at: [600, 3600], dir: [0, 1]}
+- {from: 标高 2, to: 标高 3, at: [600, 3600], dir: [0, 1]}
+roof:
+  macro: freeform
+  level: 屋顶
+  axis: x
+  span: [-600, 11400]
+  cross: [-600, 7800]
+  slope: 30
+railing:
+- {level: 标高 2, path: [[2400, 0], [2400, -1500], [6000, -1500], [6000, 0]]}
+columns:
+- {level: 标高 1, top: 标高 2, fam: 矩形柱, w: 400,
+  pts: [[6500, -1600], [9100, -1600]], set: {宽度: 400, 深度: 400}}
+families:
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\普通门\平开门\单扇\单嵌板木门 1.rfa}
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\普通门\平开门\双扇\双面嵌板木门 1.rfa}
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\窗\普通窗\固定窗\固定窗.rfa}
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\柱\矩形柱.rfa}
+openings:
+- {kind: door, at: [7800, 0], w: 1800, h: 2400, level: 标高 1, fam: 双面}
+- {kind: door, at: [5400, 1800], w: 900, h: 2100, level: 标高 1}
+- {kind: window, at: [1650, 0], w: 1500, h: 1500, sill: 900, level: 标高 1}
+- {kind: window, at: [3900, 0], w: 1500, h: 1500, sill: 900, level: 标高 1}
+- {kind: window, at: [9450, 0], w: 600, h: 600, sill: 1500, level: 标高 1}
+- {kind: window, at: [2700, 7200], w: 1500, h: 1500, sill: 900, level: 标高 1}
+- {kind: window, at: [8100, 7200], w: 1500, h: 1500, sill: 900, level: 标高 1}
+- {kind: window, at: [0, 3600], w: 1500, h: 1500, sill: 900, level: 标高 1}
+- {kind: window, at: [10800, 3600], w: 1500, h: 1500, sill: 900, level: 标高 1}
+- {kind: door, at: [4200, 0], w: 1500, h: 2100, level: 标高 2}
+- {kind: door, at: [5400, 1800], w: 900, h: 2100, level: 标高 2}
+- {kind: window, at: [1650, 0], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, at: [6750, 0], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, at: [9450, 0], w: 600, h: 600, sill: 1500, level: 标高 2}
+- {kind: window, at: [2700, 7200], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, at: [8100, 7200], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, at: [0, 3600], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, at: [10800, 3600], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: door, at: [5400, 1800], w: 900, h: 2100, level: 标高 3}
+- {kind: window, at: [1650, 0], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, at: [4200, 0], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, at: [6750, 0], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, at: [9450, 0], w: 600, h: 600, sill: 1500, level: 标高 3}
+- {kind: window, at: [2700, 7200], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, at: [8100, 7200], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, at: [0, 3600], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, at: [10800, 3600], w: 1500, h: 1500, sill: 900, level: 标高 3}
+finishes:
+- {type_name: MCP-W-240mm, material: {name: 白色外墙涂料, r: 255, g: 255, b: 255,
+  smoothness: 80}}
+- {type_name: MCP-W-120mm, material: {name: 米白内墙涂料, r: 250, g: 248, b: 242}}
+- {target: roof, material: {name: 深灰屋面瓦, r: 72, g: 72, b: 75}}
+- {target: columns, material: {name: 白色外墙涂料, r: 255, g: 255,
+  b: 255, smoothness: 80}}
+expect: {walls: 15, doors: 5, windows: 22, floors: 8, stairs: 2,
+  columns: 2, generic_models: 1}

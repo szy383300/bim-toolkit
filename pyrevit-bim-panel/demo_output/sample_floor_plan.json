@@ -1,0 +1,162 @@
+﻿{
+  "source": "sample_floor.dwg",
+  "format": "dwg",
+  "layers": [
+    "0",
+    "Defpoints",
+    "GRID",
+    "WALL",
+    "COL",
+    "DOOR"
+  ],
+  "blocks": [
+    "*Model_Space",
+    "*Paper_Space",
+    "COL-A",
+    "DOOR-S"
+  ],
+  "entities": [
+    {
+      "type": "line",
+      "layer": "GRID",
+      "handle": "33",
+      "start": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "end": [
+        12000.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "type": "line",
+      "layer": "GRID",
+      "handle": "34",
+      "start": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "end": [
+        0.0,
+        9000.0,
+        0.0
+      ]
+    },
+    {
+      "type": "lwpolyline",
+      "layer": "WALL",
+      "handle": "35",
+      "closed": true,
+      "points": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          12000.0,
+          0.0,
+          0.0
+        ],
+        [
+          12000.0,
+          9000.0,
+          0.0
+        ],
+        [
+          0.0,
+          9000.0,
+          0.0
+        ]
+      ]
+    },
+    {
+      "type": "lwpolyline",
+      "layer": "WALL",
+      "handle": "36",
+      "closed": false,
+      "points": [
+        [
+          6000.0,
+          0.0,
+          0.0
+        ],
+        [
+          6000.0,
+          9000.0,
+          0.0
+        ]
+      ]
+    },
+    {
+      "type": "insert",
+      "layer": "COL",
+      "handle": "3B",
+      "block": "COL-A",
+      "point": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "type": "insert",
+      "layer": "COL",
+      "handle": "3D",
+      "block": "COL-A",
+      "point": [
+        12000.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "type": "insert",
+      "layer": "COL",
+      "handle": "3F",
+      "block": "COL-A",
+      "point": [
+        0.0,
+        9000.0,
+        0.0
+      ]
+    },
+    {
+      "type": "insert",
+      "layer": "COL",
+      "handle": "41",
+      "block": "COL-A",
+      "point": [
+        12000.0,
+        9000.0,
+        0.0
+      ]
+    },
+    {
+      "type": "insert",
+      "layer": "COL",
+      "handle": "43",
+      "block": "COL-A",
+      "point": [
+        6000.0,
+        4500.0,
+        0.0
+      ]
+    },
+    {
+      "type": "insert",
+      "layer": "DOOR",
+      "handle": "49",
+      "block": "DOOR-S",
+      "point": [
+        3000.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

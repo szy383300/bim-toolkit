@@ -1,0 +1,157 @@
+schema: 1
+name: 三层社区服务中心
+note: '2026-10-02 新建：18m x 12m 三层公共建筑；井字内墙；双坡屋面 25 度；南向主入口'
+expect_doc: 三层社区服务中心
+takeover: false
+save_path: E:\bim-toolkit\models\三层社区服务中心.rvt
+
+levels:
+- name: 1F
+  elev: 0
+- name: 2F
+  elev: 3600
+- name: 3F
+  elev: 7200
+- name: 屋面
+  elev: 10800
+
+# ---- 外墙 240 / 内墙 200，每层同构 ----
+walls:
+- level: 1F
+  t: 240
+  h: 3600
+  segs: [[0, 0, 18000, 0], [0, 12000, 18000, 12000], [0, 0, 0, 12000], [18000, 0, 18000, 12000]]
+- level: 1F
+  t: 200
+  h: 3600
+  segs: [[6000, 0, 6000, 12000], [12000, 0, 12000, 12000], [0, 6000, 18000, 6000]]
+- level: 2F
+  t: 240
+  h: 3600
+  segs: [[0, 0, 18000, 0], [0, 12000, 18000, 12000], [0, 0, 0, 12000], [18000, 0, 18000, 12000]]
+- level: 2F
+  t: 200
+  h: 3600
+  segs: [[6000, 0, 6000, 12000], [12000, 0, 12000, 12000], [0, 6000, 18000, 6000]]
+- level: 3F
+  t: 240
+  h: 3600
+  segs: [[0, 0, 18000, 0], [0, 12000, 18000, 12000], [0, 0, 0, 12000], [18000, 0, 18000, 12000]]
+- level: 3F
+  t: 200
+  h: 3600
+  segs: [[6000, 0, 6000, 12000], [12000, 0, 12000, 12000], [0, 6000, 18000, 6000]]
+
+# ---- 楼板（每层一整块）----
+floors:
+- level: 1F
+  points: [[0, 0], [18000, 0], [18000, 12000], [0, 12000]]
+  structural: true
+- level: 2F
+  points: [[0, 0], [18000, 0], [18000, 12000], [0, 12000]]
+  structural: true
+- level: 3F
+  points: [[0, 0], [18000, 0], [18000, 12000], [0, 12000]]
+  structural: true
+
+# ---- 楼梯：西南角双跑，沿 +y ----
+stairs:
+- from: 1F
+  to: 2F
+  at: [3000, 1500]
+  dir: [0, 1]
+- from: 2F
+  to: 3F
+  at: [3000, 1500]
+  dir: [0, 1]
+
+# ---- 双坡屋面（脊线沿 x）----
+roof:
+  level: 屋面
+  axis: x
+  span: [-500, 18500]
+  cross: [-500, 12500]
+  slope: 25
+
+# ---- 二层 / 三层南向阳台栏杆 ----
+railing:
+- level: 2F
+  path: [[4000, 0], [4000, -1500], [10000, -1500], [10000, 0]]
+- level: 3F
+  path: [[4000, 0], [4000, -1500], [10000, -1500], [10000, 0]]
+
+families:
+- path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\普通门\平开门\单扇\单嵌板木门 1.rfa
+- path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\普通门\平开门\双扇\双面嵌板木门 1.rfa
+- path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\窗\普通窗\固定窗\固定窗.rfa
+
+# ---- 门窗：全部落在墙线上（校验器要求距墙 <= 300mm）----
+openings:
+# 1F 南墙（y=0）：主入口 + 两侧窗
+- {kind: door, at: [9000, 0], w: 1500, h: 2400, level: 1F}
+- {kind: window, at: [3000, 0], w: 1800, h: 1800, level: 1F}
+- {kind: window, at: [15000, 0], w: 1800, h: 1800, level: 1F}
+# 1F 北墙（y=12000）
+- {kind: window, at: [3000, 12000], w: 1800, h: 1800, level: 1F}
+- {kind: window, at: [9000, 12000], w: 1800, h: 1800, level: 1F}
+- {kind: window, at: [15000, 12000], w: 1800, h: 1800, level: 1F}
+# 1F 西墙 / 东墙
+- {kind: window, at: [0, 3000], w: 1800, h: 1800, level: 1F}
+- {kind: window, at: [0, 9000], w: 1800, h: 1800, level: 1F}
+- {kind: window, at: [18000, 3000], w: 1800, h: 1800, level: 1F}
+- {kind: window, at: [18000, 9000], w: 1800, h: 1800, level: 1F}
+# 1F 内门
+- {kind: door, at: [6000, 2000], w: 900, h: 2100, level: 1F}
+- {kind: door, at: [6000, 10000], w: 900, h: 2100, level: 1F}
+- {kind: door, at: [3000, 6000], w: 900, h: 2100, level: 1F}
+- {kind: door, at: [15000, 6000], w: 900, h: 2100, level: 1F}
+
+# 2F 外墙窗
+- {kind: window, at: [3000, 0], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [9000, 0], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [15000, 0], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [3000, 12000], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [9000, 12000], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [15000, 12000], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [0, 3000], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [0, 9000], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [18000, 3000], w: 1800, h: 1800, level: 2F}
+- {kind: window, at: [18000, 9000], w: 1800, h: 1800, level: 2F}
+# 2F 内门
+- {kind: door, at: [6000, 2000], w: 900, h: 2100, level: 2F}
+- {kind: door, at: [6000, 10000], w: 900, h: 2100, level: 2F}
+- {kind: door, at: [3000, 6000], w: 900, h: 2100, level: 2F}
+- {kind: door, at: [15000, 6000], w: 900, h: 2100, level: 2F}
+
+# 3F 外墙窗
+- {kind: window, at: [3000, 0], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [9000, 0], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [15000, 0], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [3000, 12000], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [9000, 12000], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [15000, 12000], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [0, 3000], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [0, 9000], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [18000, 3000], w: 1800, h: 1800, level: 3F}
+- {kind: window, at: [18000, 9000], w: 1800, h: 1800, level: 3F}
+# 3F 内门
+- {kind: door, at: [6000, 2000], w: 900, h: 2100, level: 3F}
+- {kind: door, at: [6000, 10000], w: 900, h: 2100, level: 3F}
+- {kind: door, at: [3000, 6000], w: 900, h: 2100, level: 3F}
+- {kind: door, at: [15000, 6000], w: 900, h: 2100, level: 3F}
+
+materials:
+  ext: 砖
+  int: 涂料
+  roof: 瓦
+
+expect:
+  walls: 21
+  doors: 13
+  windows: 29
+  # floors=5 的构成：3 块楼板 + 2 个楼梯平台（Revit 里平台归 OST_Floors）。
+  # 修复屋面之前这里是 6 —— 多出来的那个是被当成屋面建的楼板。
+  floors: 5
+  stairs: 2
+  # 屋体现在归入 OST_Roofs；修复前这个类别的计数是 0。
+  roofs: 1

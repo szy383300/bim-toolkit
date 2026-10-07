@@ -1,0 +1,112 @@
+schema: 1
+name: 仙湖别墅
+note: 仙湖别墅外观复刻 (2026-09-13, 依据实景照片 仙湖别墅-外观11.jpg); 14400x9600,
+  车库层(标高1,t250黄色蘑菇石,部分埋土)+入口层(标高2,t240红砖)+卧室层(标高3,t240红砖);
+  左右双大山墙(ridge沿y)+中段平屋面+南向门亭(侧墙承托坡雨篷);
+  南立面 L2 拱顶形固定窗-带贴面为立面主景; L1 双滑升门(车库);
+  假设-中段坡屋顶以平屋面替代; 内隔墙极简(3面); 正立面右块与前块取平;
+  无幕墙(照片无明幕墙, 拱窗贴面分格由族内体现); 拱窗轮廓由族自带(洞口矩形);
+  验收基线 墙18 门4 窗19 板7 梯1 栏杆2 通用体3(屋面)
+expect_doc: 仙湖别墅
+takeover: true
+save_path: E:\bim-toolkit\models\仙湖别墅.rvt
+levels:
+- {name: 标高 1, elev: 0}
+- {name: 标高 2, elev: 3000}
+- {name: 标高 3, elev: 6000}
+- {name: 雨篷, elev: 5500}
+- {name: 屋顶, elev: 9000}
+walls:
+- level: 标高 1
+  t: 250
+  h: 3000
+  segs: [[300, 0, 14700, 0], [300, 0, 300, -9600], [14700, 0, 14700, -9600],
+    [300, -9600, 14700, -9600]]
+- level: 标高 1
+  t: 250
+  h: 1200
+  segs: [[-2400, -1500, 300, -1500]]
+- level: 标高 2
+  t: 240
+  h: 3000
+  segs: [[300, 0, 14700, 0], [300, 0, 300, -9600], [14700, 0, 14700, -9600],
+    [300, -9600, 14700, -9600]]
+- level: 标高 2
+  t: 240
+  h: 3000
+  segs: [[4800, 0, 4800, 1800], [7800, 0, 7800, 1800]]
+- level: 标高 3
+  t: 240
+  h: 3000
+  segs: [[300, 0, 14700, 0], [300, 0, 300, -9600], [14700, 0, 14700, -9600],
+    [300, -9600, 14700, -9600]]
+- level: 标高 2
+  t: 120
+  h: 3000
+  segs: [[9000, 0, 9000, -9600]]
+- level: 标高 3
+  t: 120
+  h: 3000
+  segs: [[9000, 0, 9000, -9600], [4200, 0, 4200, -9600]]
+floors:
+- {level: 标高 1, points: [[300, -9600], [14700, -9600], [14700, 0], [300, 0]],
+  structural: true}
+- {level: 标高 2, points: [[300, -9600], [14700, -9600], [14700, 0], [300, 0]]}
+- {level: 标高 2, points: [[1200, 0], [4800, 0], [4800, 1500], [1200, 1500]],
+  tag: balcony}
+- {level: 标高 2, points: [[4800, 0], [7800, 0], [7800, 1800], [4800, 1800]],
+  tag: porch}
+- {level: 标高 3, points: [[300, -9600], [14700, -9600], [14700, 0], [300, 0]]}
+- {level: 标高 3, points: [[1800, 0], [4200, 0], [4200, 1200], [1800, 1200]],
+  tag: balcony}
+- {level: 屋顶, points: [[5400, -9600], [10500, -9600], [10500, 0], [5400, 0]],
+  tag: flatroof}
+stairs:
+- {from: 标高 2, to: 标高 3, at: [8400, -7800], dir: [0, 1]}
+roofs:
+- {macro: freeform, level: 屋顶, axis: y, span: [-10800, 600], cross: [0, 6000],
+  slope: 30}
+- {macro: freeform, level: 屋顶, axis: y, span: [-10200, 0], cross: [9600, 15000],
+  slope: 30}
+- {macro: freeform, level: 雨篷, axis: y, span: [-600, 2400], cross: [4800, 7800],
+  slope: 30}
+railing:
+- {level: 标高 2, path: [[1200, 0], [1200, 1500], [4800, 1500], [4800, 0]]}
+- {level: 标高 3, path: [[1800, 0], [1800, 1200], [4200, 1200], [4200, 0]]}
+families:
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\卷帘门\滑升门.rfa}
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\普通门\平开门\双扇\双面嵌板木门 1.rfa}
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\窗\普通窗\固定窗\固定窗.rfa}
+- {path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\窗\普通窗\固定窗\拱顶形固定窗 - 带贴面.rfa}
+openings:
+- {kind: door, fam: 滑升, at: [2200, 0], w: 2400, h: 2100, level: 标高 1}
+- {kind: door, fam: 滑升, at: [5500, 0], w: 2400, h: 2100, level: 标高 1}
+- {kind: window, fam: 固定窗, at: [13800, 0], w: 600, h: 600, sill: 1500, level: 标高 1}
+- {kind: door, fam: 双面, at: [6000, 0], w: 1800, h: 2400, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [1250, 0], w: 1200, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [10500, 0], w: 900, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [14100, 0], w: 600, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 拱顶, at: [12300, 0], w: 1800, h: 2400, sill: 500,
+  level: 标高 2}
+- {kind: door, fam: 双面, at: [3000, 0], w: 1500, h: 2400, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [1300, 0], w: 1200, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [6000, 0], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [8100, 0], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [11700, 0], w: 1200, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [13200, 0], w: 1200, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [300, -2400], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [300, -6000], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [14700, -2400], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [14700, -6000], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [300, -4800], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [14700, -4800], w: 1500, h: 1500, sill: 900, level: 标高 3}
+- {kind: window, fam: 固定窗, at: [3600, -9600], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [11400, -9600], w: 1500, h: 1500, sill: 900, level: 标高 2}
+- {kind: window, fam: 固定窗, at: [6600, -9600], w: 1500, h: 1500, sill: 900, level: 标高 3}
+finishes:
+- {type_name: MCP-W-240mm, material: {name: 红砖墙面, r: 115, g: 42, b: 32}}
+- {type_name: MCP-W-250mm, material: {name: 黄色蘑菇石, r: 172, g: 160, b: 138}}
+- {type_name: MCP-W-120mm, material: {name: 米白内墙涂料, r: 250, g: 248, b: 242}}
+- {target: roof, material: {name: 深灰屋面瓦, r: 72, g: 72, b: 75}}
+expect: {walls: 18, doors: 4, windows: 19, floors: 8, stairs: 1,
+  generic_models: 3}

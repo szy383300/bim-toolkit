@@ -1,0 +1,11 @@
+{
+  "_readme": "「规范审查」的 AI 解释层配置。规则判定不受这里影响。",
+  "_enabled": "true=审查后额外请求一次 DeepSeek 生成整改建议；false=只用规则引擎的通用建议。",
+  "_max_items": "最多把多少条不合格/警告项喂给 AI（1~50）。",
+  "_timeout": "秒（10~180）。这是 Revit UI 线程上的同步阻塞，别设太大。",
+  "_note": "AI 输出仅供参考，不写入模型；失败时会自动降级为纯规则报告。",
+  "enabled": true,
+  "max_items": 12,
+  "max_tokens": 1200,
+  "timeout": 60
+}

@@ -1,0 +1,9 @@
+{
+  "_readme": "「配置建模」按钮的路径配置。genbuild 引擎与 buildings/ 配方都在仓库里，不在扩展目录内，所以需要这里指路。",
+  "_repo_root": "仓库根目录（含 mcp/gen_build.py 与 buildings/）。装机后填自己机器上的路径；留空时按钮会提示怎么填。可写正斜杠或反斜杠。",
+  "_python": "跑 genbuild 的 CPython 解释器；留空则自动探测（需要装了 PyYAML）。",
+  "_recipes_dir": "配方目录，相对 repo_root。",
+  "repo_root": "",
+  "python": "",
+  "recipes_dir": "buildings"
+}

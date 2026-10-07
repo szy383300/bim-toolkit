@@ -1,0 +1,8 @@
+{
+    "builtin": "BIMToolkit",
+    "description": "BIMToolkit - AI 驱动的 BIM 自动化工具集",
+    "author": "BIMToolkit Team",
+    "version": "2.0.0",
+    "author_url": "",
+    "check_updates_for": ""
+}

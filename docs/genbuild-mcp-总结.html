@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>gen_build · Revit AI 建模链路总结（2026-09-13）</title>
+<style>
+  :root { --ink:#1a2332; --sub:#5a6a82; --line:#d8e0ec; --bg:#f4f7fb; --card:#ffffff;
+          --blue:#2563eb; --green:#15803d; --amber:#b45309; --red:#b91c1c; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg); color:var(--ink);
+         font-size:14px; line-height:1.65; padding:32px 16px 64px; }
+  .wrap { max-width:1080px; margin:0 auto; }
+  h1 { font-size:24px; margin-bottom:6px; }
+  .meta { color:var(--sub); font-size:13px; margin-bottom:24px; }
+  h2 { font-size:18px; margin:34px 0 12px; padding-left:10px; border-left:4px solid var(--blue); }
+  h3 { font-size:15px; margin:18px 0 8px; }
+  p  { margin:8px 0; }
+  table { width:100%; border-collapse:collapse; background:var(--card); margin:10px 0 6px;
+          border:1px solid var(--line); font-size:13px; }
+  th { background:#eaf1fa; text-align:left; padding:8px 10px; border:1px solid var(--line); white-space:nowrap; }
+  td { padding:7px 10px; border:1px solid var(--line); vertical-align:top; }
+  tr:nth-child(even) td { background:#fafcff; }
+  code { font-family:Consolas,monospace; background:#eef2f8; padding:1px 5px; border-radius:3px; font-size:12.5px; }
+  .ok  { color:var(--green); font-weight:600; }
+  .warn{ color:var(--amber); font-weight:600; }
+  .bad { color:var(--red); font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:16px 18px; margin:10px 0; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .kpi { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0; }
+  .kpi div { background:var(--card); border:1px solid var(--line); border-radius:6px; text-align:center; padding:12px 6px; }
+  .kpi b { display:block; font-size:22px; color:var(--blue); }
+  .kpi span { font-size:12px; color:var(--sub); }
+  ul { margin:6px 0 6px 20px; }
+  li { margin:4px 0; }
+  .fig { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:14px; margin:10px 0; }
+  .fig svg { width:100%; height:auto; display:block; }
+  .tag { display:inline-block; font-size:11.5px; padding:1px 8px; border-radius:10px; margin-right:6px; }
+  .t-done { background:#dcfce7; color:var(--green); }
+  .t-part { background:#fef3c7; color:var(--amber); }
+  .t-next { background:#dbeafe; color:var(--blue); }
+  footer { margin-top:36px; color:var(--sub); font-size:12px; border-top:1px solid var(--line); padding-top:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>gen_build · Revit AI 建模链路总结</h1>
+<div class="meta">整理日期 2026-09-13 · 仓库 E:\bim-toolkit · 桥版本 v7.10.4 · Revit 2019 + pyRevit 桥 + 自研 gen_build 引擎</div>
+
+<div class="kpi">
+  <div><b>18</b><span>引擎 stage</span></div>
+  <div><b>23+</b><span>桥端宏</span></div>
+  <div><b>6</b><span>已交付建筑</span></div>
+  <div><b>27.6s</b><span>17 层塔楼构建用时</span></div>
+</div>
+
+<h2>一、总体架构：AI 如何控制 Revit</h2>
+<div class="fig">
+<svg viewBox="0 0 1040 300" xmlns="http://www.w3.org/2000/svg" font-family="Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5a6a82"/>
+    </marker>
+  </defs>
+  <!-- 4 layers -->
+  <g>
+    <rect x="20"  y="60" width="180" height="120" rx="6" fill="#eff6ff" stroke="#2563eb"/>
+    <text x="110" y="90" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a2332">AI 会话层</text>
+    <text x="110" y="115" text-anchor="middle" font-size="12" fill="#5a6a82">WorkBuddy / Agent</text>
+    <text x="110" y="136" text-anchor="middle" font-size="12" fill="#5a6a82">设计意图 → YAML spec</text>
+    <text x="110" y="157" text-anchor="middle" font-size="12" fill="#5a6a82">验收判定 / 探针解读</text>
+
+    <rect x="260" y="60" width="190" height="120" rx="6" fill="#f0fdf4" stroke="#15803d"/>
+    <text x="355" y="90" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a2332">gen_build 引擎</text>
+    <text x="355" y="115" text-anchor="middle" font-size="12" fill="#5a6a82">mcp\genbuild\*.py</text>
+    <text x="355" y="136" text-anchor="middle" font-size="12" fill="#5a6a82">dry 校验 · 18 stage 管线</text>
+    <text x="355" y="157" text-anchor="middle" font-size="12" fill="#5a6a82">expect 验收 · WIPE 幂等</text>
+
+    <rect x="510" y="60" width="180" height="120" rx="6" fill="#fffbeb" stroke="#b45309"/>
+    <text x="600" y="90" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a2332">MCP 桥（TCP）</text>
+    <text x="600" y="115" text-anchor="middle" font-size="12" fill="#5a6a82">BIMToolkit 插件 v7.10.4</text>
+    <text x="600" y="136" text-anchor="middle" font-size="12" fill="#5a6a82">execute_code 宏注入</text>
+    <text x="600" y="157" text-anchor="middle" font-size="12" fill="#5a6a82">create_walls / dwg_to_model…</text>
+
+    <rect x="750" y="60" width="180" height="120" rx="6" fill="#fef2f2" stroke="#b91c1c"/>
+    <text x="840" y="90" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a2332">Revit 2019</text>
+    <text x="840" y="115" text-anchor="middle" font-size="12" fill="#5a6a82">文档级操作（API）</text>
+    <text x="840" y="136" text-anchor="middle" font-size="12" fill="#5a6a82">墙/板/梯/门窗/栏杆/柱</text>
+    <text x="840" y="157" text-anchor="middle" font-size="12" fill="#5a6a82">另存 RVT → models\</text>
+  </g>
+  <!-- arrows -->
+  <g stroke="#5a6a82" stroke-width="1.5" fill="none" marker-end="url(#ar)">
+    <line x1="200" y1="110" x2="256" y2="110"/>
+    <line x1="450" y1="110" x2="506" y2="110"/>
+    <line x1="690" y1="110" x2="746" y2="110"/>
+  </g>
+  <!-- feedback loop -->
+  <path d="M840,180 L840,240 L110,240 L110,184" stroke="#2563eb" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#ar)"/>
+  <text x="475" y="234" text-anchor="middle" font-size="12" fill="#2563eb">验证回路：只读探针（execute_code 查询）→ JSON 回传 → AI 判定验收</text>
+  <!-- top labels -->
+  <text x="20" y="38" font-size="13" fill="#1a2332" font-weight="bold">正向构建链</text>
+  <text x="740" y="38" font-size="13" fill="#b45309" font-weight="bold">命令通道</text>
+</svg>
+</div>
+<p>核心思路：<b>AI 不直接逐条调用 Revit API</b>，而是产出声明式 YAML spec，由 gen_build 引擎按固定管线批量执行；每一步可 dry 预检、可幂等重跑、构建完自带 expect 数量验收，另配只读探针脚本做几何级复核。</p>
+
+<h2>二、链路分层与文件位置</h2>
+<table>
+<tr><th style="width:150px">层</th><th style="width:300px">位置</th><th>职责</th></tr>
+<tr><td><b>桥（Revit 端）</b></td><td><code>bimtoolkit-release\BIMToolkit.extension\</code></td><td>pyRevit 扩展 + MCP Bridge（TCP，当前 v7.10.4）。暴露 execute_code（注入宏）、create_walls / create_floors / dwg_to_model 等原生命令；面板含「DWG翻模」V2.4 交互按钮</td></tr>
+<tr><td><b>MCP 适配器</b></td><td><code>mcp\bimtoolkit_mcp.py</code></td><td>自研 JSON-RPC over stdio 适配器，把桥命令注册为 MCP 工具供 AI 会话调用；<code>bridge_client.py</code> / <code>sync_bridge.py</code> 负责连接与同步</td></tr>
+<tr><td><b>gen_build 引擎</b></td><td><code>mcp\genbuild\</code>（cli / engine / spec / macros / bridge / config / errors）</td><td>YAML spec → 静态校验（validate + dry）→ 18 stage 构建 → expect 验收 → 另存 RVT；退出码 0/1/2/3/4（4=验收 FAIL）</td></tr>
+<tr><td><b>项目 spec</b></td><td><code>buildings\*.yaml</code> + <code>gen_cloudstring_yaml.py</code></td><td>6 个建筑配方；大型项目用 Python 生成器产 YAML（云弦塔 404 行、278 开洞）</td></tr>
+<tr><td><b>验收探针</b></td><td><code>mcp\_verify_*.py</code></td><td>按项目定制的只读几何复核（bb / 标高序列 / 材质 / 贯通检查），输出 JSON 至 <code>_verify_*.txt</code></td></tr>
+<tr><td><b>产物</b></td><td><code>models\*.rvt</code>（+ <code>.000N.rvt</code> 历史版本）</td><td>每次构建另存新版本，旧版本保留可回溯；构建日志在 <code>buildings\logs\</code></td></tr>
+</table>
+
+<h2>三、引擎管线（18 stage，按序执行）</h2>
+<table>
+<tr><th style="width:130px">阶段</th><th>说明</th><th style="width:220px">关键规则 / 踩坑沉淀</th></tr>
+<tr><td>ping → takeover → wipe</td><td>连通性检查；接管文档；按 cats 清单删除重建（幂等基础）</td><td>WIPE 幂等 ⇒ 任何失败可整跑重试，无脏状态</td></tr>
+<tr><td>grids</td><td>轴网一次建成（macro grids_create）</td><td>重名捕获 name-clash</td></tr>
+<tr><td><b>dwg（可选）</b></td><td>桥原生 <code>dwg_to_model</code>：读 model_plan.json 建骨架，safe_mode 默认开</td><td>DWG 翻模入口已在管线内，本轮待用户发图启用</td></tr>
+<tr><td>walls</td><td>按 标高/厚/高 分组批量建墙 → 墙型定型（按池修复厚度）→ DWG 骨架墙置换</td><td>置换规则 supersede：精修墙覆盖骨架中心线 ≥95%（tol 15mm）才删骨架</td></tr>
+<tr><td>floors / stairs / roofs / railings / columns</td><td>板、楼梯、坡屋顶（gable_roof / gable_freeform）、栏杆（CurveLoop）、结构柱</td><td>板 points 禁写闭合点；楼梯平台板计入 floors（N 跑 +N）；栏杆开放链贴墙外皮避让门窗</td></tr>
+<tr><td>families → openings</td><td>载族 → 门窗开洞（按墙池逐条 audit）</td><td>at 中心距墙段端 ≥1600；窗顶 ≤ 墙高，否则 audit OUT</td></tr>
+<tr><td>materials / finishes</td><td>材质创建与赋给（ensure_material / finish_type / finish_elements）</td><td>材质 str(Name) 可读；<b>WallType.Name getter 桥端抛异常</b>，厚度改用 Width 换算</td></tr>
+<tr><td>save → accept</td><td>另存 RVT；数量验收 got vs expect</td><td>验收 FAIL 退出码 4；accept 覆盖 walls/doors/windows/floors/stairs/columns/generic_models</td></tr>
+</table>
+
+<h2>四、已交付成果（6 项目 / 52 份构建日志）</h2>
+<table>
+<tr><th>项目</th><th style="width:150px">规模</th><th style="width:110px">构建用时</th><th>亮点 / 验证结论</th></tr>
+<tr><td>四层别墅 / 北馨05 / 白色别墅 / 仙湖别墅</td><td>3~4 层住宅</td><td>~1 分钟级</td><td>早期配方迭代（villa 系列 probe v7→v18），打通宏注入、墙型定型、坡屋顶 freeform、族加载等基础能力</td></tr>
+<tr><td>四层白色建筑（v1 → v2）</td><td>4 层 · 墙43 门28 窗39</td><td>16.7s / 12.5s</td><td>10 项验收矩阵全绿：双跑楼梯贯通、双阳台、坡屋顶挑檐、材质白/褐、走廊贯通探针 0 违规；v2 修复栏杆重合、加东凸支撑房、中廊布局</td></tr>
+<tr><td><b>云弦塔</b></td><td>17 层 · 墙157 窗252 门18</td><td>27.6s</td><td>未来主义塔楼：裙房+12 标准层+5 级南侧退台；YAML 生成器 404 行 / 270 开洞全审计通过；二轮修复（删机房墙、退台板铺满）探针实证 max_z 57600、露台板缘序列完整</td></tr>
+</table>
+
+<h2>五、验证体系（三层防线）</h2>
+<div class="grid2">
+<div class="card">
+<h3>① dry 静态校验（0 成本）</h3>
+<p><code>python -m genbuild.cli xxx.yaml --dry</code>：spec 校验 + 桥 ping。开洞越界、墙段过短、层数不符等 <b>6 类问题在动 Revit 之前拦截</b>。</p>
+</div>
+<div class="card">
+<h3>② expect 数量验收（自动）</h3>
+<p>spec 写 expect 计数，构建尾 accept 逐项核对 got vs want，不符退出码 4。防"静默少建"。</p>
+</div>
+<div class="card">
+<h3>③ 专项几何探针（只读）</h3>
+<p><code>_verify_*.py</code> 经 execute_code 查询真实模型：包围盒、标高阶梯序列、楼梯 Z 连续性、材质 RGB、贯通检查，输出 JSON 供 AI 解读。塔楼阶梯 y=1480→3080→4680→6280→7880（每级精确 1600）即由此证实。</p>
+</div>
+<div class="card">
+<h3>环境坑速查（详见 skill）</h3>
+<ul>
+<li>同文件并行 Edit 竞态 → 串行 + Grep 复核</li>
+<li>桥闪断 → 健康窗口立即跑正式任务</li>
+<li>Bash shim 故障 → 切 PowerShell，输出落盘防 UTF-16</li>
+<li>genbuild 须以 <code>E:\bim-toolkit\mcp</code> 为 cwd 运行</li>
+</ul>
+</div>
+</div>
+
+<h2>六、DWG 翻模：现状盘点与接入方案</h2>
+<p>
+<span class="tag t-done">已就绪</span>桥端「DWG翻模」V2.4（.dwg/.dxf → dwg_to_dxf.py（CAD COM / LibreDWG 兜底，ODA 工具已在 <code>_tools\ODA</code>）→ dwg_to_json.py → model_plan.json → 预览 → 确认写入）；
+<span class="tag t-done">已就绪</span>引擎 <code>_stage_dwg</code> + 骨架墙置换 supersede（≥95% 覆盖才删，防误删）；
+<span class="tag t-done">已就绪</span>骨架墙探针产物 <code>genbuild\_dwg_walls_probe.json</code>（折线墙段 + 高度已能读出）；
+<span class="tag t-next">待做</span>以下四步，等你发 DWG 后按序执行：
+</p>
+<table>
+<tr><th style="width:60px">序</th><th>行动项</th><th style="width:110px">状态</th></tr>
+<tr><td>1</td><td><b>转换链 headless 化</b>：AI 侧直接跑 dwg_to_dxf.py → dwg_to_json.py 批处理出 model_plan.json（不经 Revit 按钮交互），先出图元统计报告（墙线/柱/门窗可识别数）</td><td><span class="tag t-next">第一步</span></td></tr>
+<tr><td>2</td><td><b>识别质量评估</b>：拿 model_plan.json 与 _dwg_walls_probe 对拍，确认墙段合并、柱/门窗映射规则（mapping_rules.csv）覆盖度，必要时调规则</td><td>待图</td></tr>
+<tr><td>3</td><td><b>两段式建模</b>：spec 配 dwg 段建骨架 → 墙/板/门窗精修段叠加 → supersede 置换删骨架，逐标高推进</td><td>待图</td></tr>
+<tr><td>4</td><td><b>DWG 项目探针</b>：复用 _verify_* 模式写 _verify_dwg 项目脚本（墙位对拍 DWG 坐标、开洞审计、验收矩阵），交付 RVT + 对照表</td><td>待图</td></tr>
+</table>
+<p class="warn">风险提示：DWG 图层命名不规范（墙线不在 WALL 层、无闭合多段线）会显著降低识别率；转换链依赖本机 CAD COM 或 LibreDWG，第一次跑需实测转换耗时与字体/编码问题。</p>
+
+<h2>七、结论</h2>
+<p><b>「AI ↔ Revit」控制链路已成型并经 6 个真实项目验证</b>：设计意图 → YAML/生成器 → dry 拦截 → 27s 级批量构建 → 自动验收 + 几何探针 → RVT 交付，全流程幂等可重试。能力面覆盖轴网、墙体（含墙型/材质）、楼板、楼梯、栏杆、坡屋顶、门窗开洞、结构柱与骨架置换；DWG 翻模的桥端与引擎侧接口均已就位，只待图纸进入第一步转换评估。</p>
+
+<footer>gen_build · E:\bim-toolkit · 总结基于 2026-09-12 ~ 09-13 构建日志与代码实况整理 · 下一阶段：DWG 翻模</footer>
+</div>
+</body>
+</html>

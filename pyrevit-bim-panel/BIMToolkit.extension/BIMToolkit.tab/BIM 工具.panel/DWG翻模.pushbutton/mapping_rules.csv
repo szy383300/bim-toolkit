@@ -1,0 +1,51 @@
+match_type,pattern,element_type,level,height,type_hint,note
+layer,*GRID*,grid,*,0,,轴网线（LINE）
+layer,WALL*,wall,*,3000,,墙（默认层高3m）
+layer,*WALL*,wall,*,3000,,墙（层名含 WALL）
+block,COL*,column,*,3000,,柱（块参照）
+block,*COL*,column,*,3000,,柱（块名含 COL）
+block,DOOR*,door,*,2100,,门（实验性，未自动嵌墙）
+block,*DOOR*,door,*,2100,,门（实验性）
+block,WIN*,window,*,2100,,窗（实验性）
+block,*WIN*,window,*,2100,,窗（实验性）
+block,$DorLib2D*,door,*,2100,,天正门库块（开启弧验证）
+block,*DorLib2D*,door,*,2100,,天正门库块（含推拉门等无弧特例）
+layer,ROOM*,room,*,0,,房间（闭合多段线）
+layer,*ROOM*,room,*,0,,房间（闭合多段线）
+layer,SLAB*,slab,*,0,,板（闭合多段线，实验性）
+layer,*SLAB*,slab,*,0,,板（实验性）
+layer,BEAM*,beam,*,0,,梁（DirectShape 长方体；安全模式下跳过）
+layer,*BEAM*,beam,*,0,,梁（DirectShape 长方体；安全模式下跳过）
+layer,轴线*,grid,*,0,,轴网线（中文层名）
+layer,*轴线*,grid,*,0,,轴网线（中文层名）
+layer,轴网*,grid,*,0,,轴网（中文层名）
+layer,墙*,wall,*,3000,,墙（中文层名）
+layer,*墙*,wall,*,3000,,墙（中文层名）
+layer,柱*,column,*,3000,,柱（中文层名）
+layer,*柱*,column,*,3000,,柱（中文层名）
+layer,门*,door,*,2100,,门（中文层名）
+layer,*门*,door,*,2100,,门（中文层名）
+layer,窗*,window,*,2100,,窗（中文层名）
+layer,*窗*,window,*,2100,,窗（中文层名）
+layer,房间*,room,*,0,,房间（中文层名）
+layer,*房间*,room,*,0,,房间（中文层名）
+layer,板*,slab,*,0,,板（中文层名）
+layer,*板*,slab,*,0,,板（中文层名）
+layer,梁*,beam,*,0,,梁（中文层名）
+layer,*梁*,beam,*,0,,梁（中文层名）
+layer,AXIS*,grid,*,0,,轴网(英文层名 AXIS)
+layer,*AXIS*,grid,*,0,,轴网(英文层名)
+layer,COLUMN*,column,*,3000,,柱(英文层名 COLUMN)
+layer,*COLUMN*,column,*,3000,,柱(英文层名)
+layer,WINDOW*,window,*,2100,,窗(英文层名 WINDOW)
+layer,*WINDOW*,window,*,2100,,窗(英文层名)
+layer,win*,window,*,2100,,窗(英文层名 win，通配 WINDOW)
+layer,BALCONY*,wall,*,1100,,阳台栏板→矮墙1100（要改高度改这列）
+layer,*BALCONY*,wall,*,1100,,阳台栏板→矮墙1100
+layer,STAIR*,stair,*,3000,,楼梯(实验-DirectShape实体)
+layer,*STAIR*,stair,*,3000,,楼梯(实验-DirectShape)
+block,*STAIR*,stair,*,3000,,天正楼梯块(实验-DirectShape)
+layer,WLL*,wall,*,3000,,墙(WLL拼音前缀,实测a7b0a24750 WLL2墙层153线)
+layer,*WLL*,wall,*,3000,,墙(层名含WLL)
+layer,ZHOU*,grid,*,0,,轴网(ZHOU拼音前缀,实测ZHOU2轴网多段线)
+layer,*ZHOU*,grid,*,0,,轴网(层名含ZHOU)

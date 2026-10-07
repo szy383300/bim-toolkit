@@ -1,0 +1,682 @@
+schema: 1
+name: 四层别墅
+note: '由 build_villa2.py 数据机械转写 (2026-09-12); 重建验证基线: 墙39 门26 窗23 板10 梯3'
+expect_doc: 四层别墅
+takeover: false
+save_path: E:\bim-toolkit\models\四层别墅.rvt
+levels:
+- name: 标高 1
+  elev: 0
+- name: 标高 2
+  elev: 3000
+- name: 标高 3
+  elev: 6000
+- name: 标高 4
+  elev: 9000
+- name: 屋顶
+  elev: 12000
+walls:
+- level: 标高 1
+  t: 240
+  h: 3000
+  segs:
+  - - 0
+    - 0
+    - 12000
+    - 0
+  - - 0
+    - 9000
+    - 12000
+    - 9000
+  - - 0
+    - 0
+    - 0
+    - 9000
+  - - 12000
+    - 0
+    - 12000
+    - 9000
+- level: 标高 2
+  t: 240
+  h: 3000
+  segs:
+  - - 0
+    - 0
+    - 12000
+    - 0
+  - - 0
+    - 9000
+    - 12000
+    - 9000
+  - - 0
+    - 0
+    - 0
+    - 9000
+  - - 12000
+    - 0
+    - 12000
+    - 9000
+- level: 标高 3
+  t: 240
+  h: 3000
+  segs:
+  - - 0
+    - 0
+    - 12000
+    - 0
+  - - 0
+    - 9000
+    - 12000
+    - 9000
+  - - 0
+    - 0
+    - 0
+    - 9000
+  - - 12000
+    - 0
+    - 12000
+    - 9000
+- level: 标高 4
+  t: 240
+  h: 3000
+  segs:
+  - - 0
+    - 0
+    - 12000
+    - 0
+  - - 0
+    - 9000
+    - 12000
+    - 9000
+  - - 0
+    - 0
+    - 0
+    - 9000
+  - - 12000
+    - 0
+    - 12000
+    - 9000
+- level: 标高 1
+  t: 100
+  h: 3000
+  segs:
+  - - 2400
+    - 0
+    - 2400
+    - 9000
+  - - 0
+    - 3000
+    - 2400
+    - 3000
+  - - 0
+    - 6900
+    - 2400
+    - 6900
+  - - 8400
+    - 0
+    - 8400
+    - 9000
+  - - 2400
+    - 5200
+    - 8400
+    - 5200
+  - - 8400
+    - 4500
+    - 12000
+    - 4500
+- level: 标高 2
+  t: 100
+  h: 3000
+  segs:
+  - - 2400
+    - 0
+    - 2400
+    - 9000
+  - - 0
+    - 3000
+    - 2400
+    - 3000
+  - - 0
+    - 6900
+    - 2400
+    - 6900
+  - - 7400
+    - 0
+    - 7400
+    - 9000
+  - - 2400
+    - 4500
+    - 12000
+    - 4500
+  - - 7400
+    - 2700
+    - 12000
+    - 2700
+- level: 标高 3
+  t: 100
+  h: 3000
+  segs:
+  - - 2400
+    - 0
+    - 2400
+    - 9000
+  - - 0
+    - 3000
+    - 2400
+    - 3000
+  - - 0
+    - 6900
+    - 2400
+    - 6900
+  - - 7400
+    - 0
+    - 7400
+    - 9000
+  - - 2400
+    - 4500
+    - 12000
+    - 4500
+  - - 7400
+    - 2700
+    - 12000
+    - 2700
+- level: 标高 4
+  t: 100
+  h: 3000
+  segs:
+  - - 2400
+    - 0
+    - 2400
+    - 9000
+  - - 0
+    - 3000
+    - 2400
+    - 3000
+  - - 0
+    - 6900
+    - 2400
+    - 6900
+  - - 7400
+    - 0
+    - 7400
+    - 9000
+  - - 7400
+    - 2700
+    - 12000
+    - 2700
+floors:
+- level: 标高 1
+  points: &id001
+  - - 0
+    - 0
+  - - 12000
+    - 0
+  - - 12000
+    - 9000
+  - - 0
+    - 9000
+  structural: true
+- level: 标高 2
+  points: *id001
+- level: 标高 3
+  points: *id001
+- level: 标高 4
+  points: *id001
+- level: 标高 2
+  points: &id002
+  - - 4200
+    - 0
+  - - 9000
+    - 0
+  - - 9000
+    - -1500
+  - - 4200
+    - -1500
+  tag: balcony
+- level: 标高 3
+  points: *id002
+  tag: balcony
+stairs:
+- from: 标高 1
+  to: 标高 2
+  at:
+  - 0
+  - 3300
+  dir:
+  - 0
+  - 1
+- from: 标高 2
+  to: 标高 3
+  at:
+  - 0
+  - 3300
+  dir:
+  - 0
+  - 1
+- from: 标高 3
+  to: 标高 4
+  at:
+  - 0
+  - 3300
+  dir:
+  - 0
+  - 1
+roof:
+  level: 屋顶
+  axis: x
+  span:
+  - -600
+  - 12600
+  cross:
+  - -600
+  - 9600
+  slope: 30
+railing:
+- level: 标高 2
+  path: &id003
+  - - 4200
+    - 0
+  - - 4200
+    - -1500
+  - - 9000
+    - -1500
+  - - 9000
+    - 0
+- level: 标高 3
+  path: *id003
+families:
+- path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\普通门\平开门\单扇\单嵌板木门 1.rfa
+- path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\门\普通门\平开门\双扇\双面嵌板木门 1.rfa
+- path: C:\ProgramData\Autodesk\RVT 2019\Libraries\China\建筑\窗\普通窗\固定窗\固定窗.rfa
+openings:
+- kind: door
+  at:
+  - 1200
+  - 0
+  w: 1200
+  h: 2100
+  level: 标高 1
+- kind: window
+  at:
+  - 5400
+  - 0
+  w: 1800
+  h: 1500
+  level: 标高 1
+  sill: 900
+- kind: window
+  at:
+  - 10200
+  - 0
+  w: 1500
+  h: 1500
+  level: 标高 1
+  sill: 900
+- kind: window
+  at:
+  - 10200
+  - 9000
+  w: 1500
+  h: 1500
+  level: 标高 1
+  sill: 900
+- kind: window
+  at:
+  - 5400
+  - 9000
+  w: 1500
+  h: 1500
+  level: 标高 1
+  sill: 900
+- kind: window
+  at:
+  - 0
+  - 7800
+  w: 600
+  h: 1500
+  level: 标高 1
+  sill: 1500
+- kind: door
+  at:
+  - 2400
+  - 1500
+  w: 900
+  h: 2100
+  level: 标高 1
+- kind: door
+  at:
+  - 2400
+  - 4800
+  w: 900
+  h: 2100
+  level: 标高 1
+- kind: door
+  at:
+  - 2400
+  - 7800
+  w: 900
+  h: 2100
+  level: 标高 1
+- kind: door
+  at:
+  - 5400
+  - 5200
+  w: 900
+  h: 2100
+  level: 标高 1
+- kind: door
+  at:
+  - 8400
+  - 2200
+  w: 900
+  h: 2100
+  level: 标高 1
+- kind: door
+  at:
+  - 10200
+  - 4500
+  w: 900
+  h: 2100
+  level: 标高 1
+- kind: door
+  at:
+  - 6600
+  - 0
+  w: 1800
+  h: 2100
+  level: 标高 2
+- kind: window
+  at:
+  - 3600
+  - 0
+  w: 1500
+  h: 1500
+  level: 标高 2
+  sill: 900
+- kind: window
+  at:
+  - 9700
+  - 0
+  w: 600
+  h: 1500
+  level: 标高 2
+  sill: 1500
+- kind: window
+  at:
+  - 4900
+  - 9000
+  w: 1500
+  h: 1500
+  level: 标高 2
+  sill: 900
+- kind: window
+  at:
+  - 9700
+  - 9000
+  w: 1500
+  h: 1500
+  level: 标高 2
+  sill: 900
+- kind: window
+  at:
+  - 12000
+  - 6700
+  w: 1500
+  h: 1500
+  level: 标高 2
+  sill: 900
+- kind: window
+  at:
+  - 0
+  - 7800
+  w: 600
+  h: 1500
+  level: 标高 2
+  sill: 1500
+- kind: door
+  at:
+  - 2400
+  - 4800
+  w: 900
+  h: 2100
+  level: 标高 2
+- kind: door
+  at:
+  - 2400
+  - 3800
+  w: 900
+  h: 2100
+  level: 标高 2
+- kind: door
+  at:
+  - 1200
+  - 6900
+  w: 900
+  h: 2100
+  level: 标高 2
+- kind: door
+  at:
+  - 1200
+  - 3000
+  w: 900
+  h: 2100
+  level: 标高 2
+- kind: door
+  at:
+  - 7400
+  - 3600
+  w: 900
+  h: 2100
+  level: 标高 2
+- kind: door
+  at:
+  - 9700
+  - 4500
+  w: 900
+  h: 2100
+  level: 标高 2
+- kind: door
+  at:
+  - 9700
+  - 2700
+  w: 900
+  h: 2100
+  level: 标高 2
+- kind: door
+  at:
+  - 6600
+  - 0
+  w: 1800
+  h: 2100
+  level: 标高 3
+- kind: window
+  at:
+  - 3600
+  - 0
+  w: 1500
+  h: 1500
+  level: 标高 3
+  sill: 900
+- kind: window
+  at:
+  - 9700
+  - 0
+  w: 600
+  h: 1500
+  level: 标高 3
+  sill: 1500
+- kind: window
+  at:
+  - 4900
+  - 9000
+  w: 1500
+  h: 1500
+  level: 标高 3
+  sill: 900
+- kind: window
+  at:
+  - 9700
+  - 9000
+  w: 1500
+  h: 1500
+  level: 标高 3
+  sill: 900
+- kind: window
+  at:
+  - 12000
+  - 6700
+  w: 1500
+  h: 1500
+  level: 标高 3
+  sill: 900
+- kind: window
+  at:
+  - 0
+  - 7800
+  w: 600
+  h: 1500
+  level: 标高 3
+  sill: 1500
+- kind: door
+  at:
+  - 2400
+  - 4800
+  w: 900
+  h: 2100
+  level: 标高 3
+- kind: door
+  at:
+  - 2400
+  - 3800
+  w: 900
+  h: 2100
+  level: 标高 3
+- kind: door
+  at:
+  - 1200
+  - 6900
+  w: 900
+  h: 2100
+  level: 标高 3
+- kind: door
+  at:
+  - 1200
+  - 3000
+  w: 900
+  h: 2100
+  level: 标高 3
+- kind: door
+  at:
+  - 7400
+  - 3600
+  w: 900
+  h: 2100
+  level: 标高 3
+- kind: door
+  at:
+  - 9700
+  - 4500
+  w: 900
+  h: 2100
+  level: 标高 3
+- kind: door
+  at:
+  - 9700
+  - 2700
+  w: 900
+  h: 2100
+  level: 标高 3
+- kind: window
+  at:
+  - 4900
+  - 0
+  w: 1800
+  h: 1500
+  level: 标高 4
+  sill: 900
+- kind: window
+  at:
+  - 9700
+  - 0
+  w: 1500
+  h: 1500
+  level: 标高 4
+  sill: 900
+- kind: window
+  at:
+  - 4900
+  - 9000
+  w: 1800
+  h: 1500
+  level: 标高 4
+  sill: 900
+- kind: window
+  at:
+  - 9700
+  - 9000
+  w: 1500
+  h: 1500
+  level: 标高 4
+  sill: 900
+- kind: window
+  at:
+  - 12000
+  - 6700
+  w: 1500
+  h: 1500
+  level: 标高 4
+  sill: 900
+- kind: window
+  at:
+  - 0
+  - 7800
+  w: 600
+  h: 1500
+  level: 标高 4
+  sill: 1500
+- kind: door
+  at:
+  - 2400
+  - 4800
+  w: 900
+  h: 2100
+  level: 标高 4
+- kind: door
+  at:
+  - 7400
+  - 1350
+  w: 900
+  h: 2100
+  level: 标高 4
+- kind: door
+  at:
+  - 7400
+  - 5000
+  w: 900
+  h: 2100
+  level: 标高 4
+materials:
+- group: walls_t240
+  pick:
+  - 砖
+  - 砌块
+  - 混凝土
+- group: walls_t100
+  pick:
+  - 涂料
+  - 石膏
+- group: roof
+  pick:
+  - 瓦
+  - 沥青
+  - 混凝土
+- group: floor_balcony
+  pick:
+  - 木
+  - 混凝土
+expect:
+  walls: 39
+  doors: 26
+  windows: 23
+  floors: 10
+  stairs: 3

@@ -1,0 +1,623 @@
+{
+ "level": "标高 1",
+ "delete_ids": [
+  333742,
+  333744,
+  333746,
+  333748,
+  333750,
+  333753,
+  333755,
+  333757,
+  333758,
+  333759,
+  333751,
+  333756
+ ],
+ "create_walls": [
+  {
+   "start": [
+    9800,
+    21660
+   ],
+   "end": [
+    11500,
+    21660
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "window@10650",
+   "_extended": "+100mm 窗垛"
+  },
+  {
+   "start": [
+    9750.0,
+    8940.0
+   ],
+   "end": [
+    11550.0,
+    8940.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "window@10650"
+  },
+  {
+   "start": [
+    13100,
+    20400
+   ],
+   "end": [
+    14800,
+    20400
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "window@13950",
+   "_extended": "+100mm 窗垛"
+  },
+  {
+   "start": [
+    15600.0,
+    20520.0
+   ],
+   "end": [
+    15600.0,
+    21420.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 240,
+   "level": "标高 1",
+   "_for": "door@20970"
+  },
+  {
+   "start": [
+    15600.0,
+    18120.0
+   ],
+   "end": [
+    15600.0,
+    18920.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 120,
+   "level": "标高 1",
+   "_for": "door@18520"
+  },
+  {
+   "start": [
+    9900.0,
+    15900.0
+   ],
+   "end": [
+    10700.0,
+    15900.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 60,
+   "level": "标高 1",
+   "_for": "door@10300"
+  },
+  {
+   "start": [
+    17920.0,
+    14660.0
+   ],
+   "end": [
+    17920.0,
+    15560.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 240.0,
+   "level": "标高 1",
+   "_for": "door@15110"
+  },
+  {
+   "start": [
+    16500.0,
+    14780.0
+   ],
+   "end": [
+    16500.0,
+    15680.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "door@15230"
+  },
+  {
+   "start": [
+    18300.0,
+    16120.0
+   ],
+   "end": [
+    18300.0,
+    17020.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 120,
+   "level": "标高 1",
+   "_for": "door@16570"
+  },
+  {
+   "start": [
+    8940.0,
+    14550.0
+   ],
+   "end": [
+    8940.0,
+    15450.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 60,
+   "level": "标高 1",
+   "_for": "window@15000"
+  },
+  {
+   "start": [
+    27450.0,
+    8940.0
+   ],
+   "end": [
+    29250.0,
+    8940.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "window@28350"
+  },
+  {
+   "start": [
+    23400.0,
+    9600.0
+   ],
+   "end": [
+    25770.38024369211,
+    9600.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "window@24585"
+  },
+  {
+   "start": [
+    22500.0,
+    14780.0
+   ],
+   "end": [
+    22500.0,
+    15680.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "door@15230"
+  },
+  {
+   "start": [
+    23400.0,
+    18120.0
+   ],
+   "end": [
+    23400.0,
+    18920.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 120,
+   "level": "标高 1",
+   "_for": "door@18520"
+  },
+  {
+   "start": [
+    28300.0,
+    15900.0
+   ],
+   "end": [
+    29100.0,
+    15900.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 60,
+   "level": "标高 1",
+   "_for": "door@28700"
+  },
+  {
+   "start": [
+    30060.0,
+    14550.0
+   ],
+   "end": [
+    30060.0,
+    15450.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 60,
+   "level": "标高 1",
+   "_for": "window@15000"
+  },
+  {
+   "start": [
+    27500,
+    21660
+   ],
+   "end": [
+    29200,
+    21660
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "window@28350",
+   "_extended": "+100mm 窗垛"
+  },
+  {
+   "start": [
+    24200,
+    20400
+   ],
+   "end": [
+    25900,
+    20400
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 100,
+   "level": "标高 1",
+   "_for": "window@25050",
+   "_extended": "+100mm 窗垛"
+  },
+  {
+   "start": [
+    23400.0,
+    20520.0
+   ],
+   "end": [
+    23400.0,
+    21420.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 240,
+   "level": "标高 1",
+   "_for": "door@20970"
+  },
+  {
+   "start": [
+    21200.0,
+    14660.0
+   ],
+   "end": [
+    21200.0,
+    15560.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 240.0,
+   "level": "标高 1",
+   "_for": "door@15110"
+  },
+  {
+   "start": [
+    20700.0,
+    16120.0
+   ],
+   "end": [
+    20700.0,
+    17020.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 120,
+   "level": "标高 1",
+   "_for": "door@16570"
+  },
+  {
+   "start": [
+    16840.0,
+    13680.0
+   ],
+   "end": [
+    17740.0,
+    13680.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 240.0,
+   "level": "标高 1",
+   "_for": "door@17290"
+  },
+  {
+   "start": [
+    21080.0,
+    13680.0
+   ],
+   "end": [
+    21980.0,
+    13680.0
+   ],
+   "height_mm": 3000.0,
+   "thickness_mm": 240.0,
+   "level": "标高 1",
+   "_for": "door@21530"
+  }
+ ],
+ "create_door_window": [
+  {
+   "kind": "window",
+   "point": [
+    10650.0,
+    21660.0
+   ],
+   "width_mm": 1500.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 1500"
+  },
+  {
+   "kind": "window",
+   "point": [
+    10650.0,
+    8940.0
+   ],
+   "width_mm": 1800.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 1800"
+  },
+  {
+   "kind": "window",
+   "point": [
+    13950.0,
+    20400.0
+   ],
+   "width_mm": 1500.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 1500"
+  },
+  {
+   "kind": "door",
+   "point": [
+    15600.0,
+    20970.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    15600.0,
+    18520.0
+   ],
+   "width_mm": 800.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "缺口 800"
+  },
+  {
+   "kind": "door",
+   "point": [
+    10300.0,
+    15900.0
+   ],
+   "width_mm": 800.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "缺口 800"
+  },
+  {
+   "kind": "door",
+   "point": [
+    17920.0,
+    15110.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    16500.0,
+    15230.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    18300.0,
+    16570.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "window",
+   "point": [
+    8940.0,
+    15000.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 900"
+  },
+  {
+   "kind": "window",
+   "point": [
+    28350.0,
+    8940.0
+   ],
+   "width_mm": 1800.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 1800"
+  },
+  {
+   "kind": "window",
+   "point": [
+    24585.190121846055,
+    9600.0
+   ],
+   "width_mm": 2370.3802436921105,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 2370"
+  },
+  {
+   "kind": "door",
+   "point": [
+    22500.0,
+    15230.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    23400.0,
+    18520.0
+   ],
+   "width_mm": 800.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "缺口 800"
+  },
+  {
+   "kind": "door",
+   "point": [
+    28700.0,
+    15900.0
+   ],
+   "width_mm": 800.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "缺口 800"
+  },
+  {
+   "kind": "window",
+   "point": [
+    30060.0,
+    15000.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 900"
+  },
+  {
+   "kind": "window",
+   "point": [
+    28350.0,
+    21660.0
+   ],
+   "width_mm": 1500.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 1500"
+  },
+  {
+   "kind": "window",
+   "point": [
+    25050.0,
+    20400.0
+   ],
+   "width_mm": 1500.0,
+   "height_mm": 1500.0,
+   "sill_mm": 900.0,
+   "level": "标高 1",
+   "_mode": "缺口 1500"
+  },
+  {
+   "kind": "door",
+   "point": [
+    23400.0,
+    20970.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    21200.0,
+    15110.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    20700.0,
+    16570.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    17290.0,
+    13680.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  },
+  {
+   "kind": "door",
+   "point": [
+    21530.0,
+    13680.0
+   ],
+   "width_mm": 900.0,
+   "height_mm": 2100.0,
+   "sill_mm": 0.0,
+   "level": "标高 1",
+   "_mode": "单侧推断 900"
+  }
+ ]
+}

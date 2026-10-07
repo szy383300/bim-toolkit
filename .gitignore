@@ -1,0 +1,108 @@
+# Python 缓存与编译产物
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境（体积巨大，绝对不要提交）
+.venv/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# 测试与工具缓存
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志
+*.log
+
+# 本地临时输出（脚本跑出来的结果文件）
+output/
+tmp/
+temp/
+*.tmp
+
+# BIMToolkit 部署产物（自动生成，勿提交）
+last-good/
+version.txt
+**/sample_out/
+
+# 安装器/构建产物（由主副本组装或第三方工具，勿提交）
+*.zip
+_tools/
+dwgflip-release/
+bimtoolkit-release/BIMToolkit.extension/
+bimtoolkit-release/revit-mcp/
+
+# ---------------------------------------------------------------------------
+# 密钥与本地配置（2026-10-01 补：此前 deepseek_config.json 里的真实 API Key
+# 被提交进了 df81a3e，是本次调查发现的最严重问题之一）
+#   只提交 *.example 模板；真实密钥走环境变量 DEEPSEEK_API_KEY
+#   （llm_client.load_config() 已支持，且优先级高于文件）
+# ---------------------------------------------------------------------------
+deepseek_config.json
+*.token
+
+# MCP Bridge 运行时状态：只在部署目标目录里由桥生成，仓库中不应出现。
+# 它们同时是 deploy.py / install.bat 的 /XD /XF 排除对象（审计流水，勿删）。
+mcp_audit.jsonl
+mcp_crash.log
+mcp_bridge.log
+logs_archive/
+
+# 就地修改前的手工备份（bridge_core.py.bak-20260914 之类）
+*.bak-*
+*.bak_*
+
+# ---------------------------------------------------------------------------
+# 训练/模型/研究产物（2026-10-01 补）
+#
+# 这些目录此前**没有**被忽略，却是仓库体积的主体：
+#   _train/      1819.7 MB
+#   _models/     1241.8 MB
+#   _research/    147.0 MB
+#   _snapshots/    27.8 MB
+# 合计约 3.2 GB 的生成数据悬在工作区里未跟踪 —— 一次 `git add .` 就会把它们
+# 全部提交进去。它们是**产物**（模型权重 / .rvt 快照 / 中间分析结果），
+# 不是源码，不该进版本库。
+#
+# 需要小样例时请单独放 `**/sample_out/`（已在上面忽略）或写进 docs/。
+# ---------------------------------------------------------------------------
+_train/
+_models/
+_snapshots/
+_research/
+analysis/
+buildings/logs/
+
+# 生成的 .rvt 模型快照（另 384 MB）
+models/
+
+# 调查/审计的临时工作目录（原始产出值得留档的已整理进 docs/）
+_survey/
+
+# mcp/ 下的一次性探针脚本与本地 agent 状态。
+# 沿用本仓库既有约定：下划线前缀 = 本地工作区（_tools/ _train/ _research/ ...）。
+mcp/_*
+mcp/.workbuddy/
+
+# ===== 大体积模型与 CAD 样例：不入库，保留在原仓库 E:\bim-toolkit =====
+models/
+cad_samples/
+*.rvt
+*.rfa
+*.dxf
+*.dwg

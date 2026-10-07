@@ -1,0 +1,61 @@
+{
+    "building_info": {
+        "building_name": "示范别墅",
+        "total_floors": 2,
+        "floor_height_mm": 3000,
+        "footprint_length_m": 12.0,
+        "footprint_width_m": 9.0,
+        "interior_walls": [
+            {
+                "start_x_m": 4.0,
+                "start_y_m": 0.0,
+                "end_x_m": 4.0,
+                "end_y_m": 9.0,
+                "thickness_mm": 120
+            },
+            {
+                "start_x_m": 8.0,
+                "start_y_m": 0.0,
+                "end_x_m": 8.0,
+                "end_y_m": 9.0,
+                "thickness_mm": 120
+            }
+        ],
+        "balcony": {
+            "enabled": true,
+            "width_mm": 1500,
+            "length_mm": 4000
+        }
+    },
+    "structural_system": {
+        "wall_thickness_mm": 200,
+        "foundation_type": "条形基础"
+    },
+    "roof": {
+        "type": "gable",
+        "slope_angle_deg": 30,
+        "overhang_mm": 300
+    },
+    "openings": {
+        "windows": {
+            "width_mm": 1500,
+            "height_mm": 1500,
+            "sill_height_mm": 900,
+            "count_per_wall": [3, 2, 3, 2]
+        },
+        "doors": {
+            "entry": {
+                "width_mm": 1000,
+                "height_mm": 2100
+            },
+            "interior": {
+                "width_mm": 800,
+                "height_mm": 2000,
+                "count_per_floor": 4
+            }
+        }
+    },
+    "location": "中国",
+    "seismic_intensity": 7,
+    "fire_resistance": 2
+}
