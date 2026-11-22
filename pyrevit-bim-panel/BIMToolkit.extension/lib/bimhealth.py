@@ -14,6 +14,7 @@ bimhealth.py —— BIM 体检共用函数（阶段 4）。
 只在 Revit + pyRevit 宿主内真正运行；headless 下仅做语法/符号校验，
 不会被执行。所有 Revit API 调用包裹在 try/except，避免单点异常拖垮整条命令。
 """
+from __future__ import division
 from collections import Counter
 
 try:

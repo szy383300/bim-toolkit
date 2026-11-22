@@ -20,7 +20,7 @@ bimtoolkit_mcp.py —— BIMToolkit MCP 适配器（M2 闭环的 AI 侧入口）
 零第三方依赖，Python 3.8+ 标准库即可跑。
 
 用法（客户端配置示例）：
-  claude mcp add bimtoolkit -- python <仓库根>/mcp/bimtoolkit_mcp.py
+  claude mcp add bimtoolkit -- python E:/bim-toolkit/mcp/bimtoolkit_mcp.py
 环境变量：
   BIMTOOLKIT_PORT   默认 9877
   BIMTOOLKIT_TOKEN  默认自动读扩展目录 bridge.token
@@ -201,11 +201,8 @@ class BridgeClient(object):
             os.path.join(appdata, "pyRevit", "Extensions", "BIMToolkit.extension",
                          "BIMToolkit.tab", "BIM 工具.panel", "MCP Bridge.pushbutton",
                          "bridge.token"),
-            # 源码目录：本文件在 <仓库根>/mcp/ 下，回推两级即仓库根，不依赖某台机器的路径
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         "pyrevit-bim-panel", "BIMToolkit.extension",
-                         "BIMToolkit.tab", u"BIM 工具.panel",
-                         "MCP Bridge.pushbutton", "bridge.token"),
+            r"E:\bim-toolkit\pyrevit-bim-panel\BIMToolkit.extension\BIMToolkit.tab"
+            r"\BIM 工具.panel\MCP Bridge.pushbutton\bridge.token",
         ]
         for p in cands:
             try:

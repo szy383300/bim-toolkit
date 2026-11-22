@@ -180,8 +180,8 @@ def main(argv):
         return 0
 
     _log(u"失败：所有途径（CAD 另存 / LibreDWG 兜底）都未能完成版本转换。")
-    _log(u"补救：①确认 dwg2dxf.exe 在「你的用户目录\\cad-tools」下、"
-         u"或已进 PATH、或已用环境变量 BIMTOOLKIT_DWG2DXF 指到它；"
+    _log(u"补救：①确认 dwg2dxf.exe 存在（BIMTOOLKIT_DWG2DXF 环境变量、"
+         u"用户目录\\cad-tools、或 PATH 三者之一）；"
          u"②装 ODA File Converter。")
     return 1
 

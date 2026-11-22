@@ -35,8 +35,17 @@ _BLOCK_RULES = [
     (r"\bopen\s*\(", u"文件读写 open()"),
     (r"\b(eval|exec|compile)\s*\(", u"动态执行 eval/exec/compile"),
     (r"^\s*(import|from)\s+(os|sys|subprocess|shutil|socket|urllib|httplib|"
-     r"requests|ctypes|pickle|glob|tempfile)\b",
+     r"requests|ctypes|pickle|glob|tempfile|importlib|imp|code|codeop|"
+     r"runpy|builtins|__future__)\b",
      u"导入与「操作模型」无关的模块 (os/sys/subprocess/socket/…)"),
+    # 2026-10-15 补：命名空间收窄后 os/sys 不再预注入，但 import 拦截
+    # 仍有缝隙（逗号导入、局部 import）——属性访问一并对齐：合法的
+    # Revit 模型操作用不到 os.* / sys.*，出现即按越界拒。
+    (r"\bos\s*\.\s*(system|popen|remove|unlink|rmdir|rename|listdir|"
+     r"environ|getenv|putenv|spawn\w*|exec\w*)\b",
+     u"调用 os 的进程/文件/环境变量接口"),
+    (r"\bsys\s*\.\s*(exit|argv|path\s*\.\s*insert|modules)\b",
+     u"调用 sys 的退出/参数/模块表接口"),
 ]
 
 # 这些是「AI 指令」的本职，只告警

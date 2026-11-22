@@ -32,6 +32,16 @@ import os
 import subprocess
 import sys
 
+# 控制台是 GBK，而本脚本要打印 ⚠ 这类非 GBK 字符、还要原样转述子进程的报错文本。
+# 2026-10-13 实锤：`print(u"⚠️ 解释器不存在")` 抛 UnicodeEncodeError，脚本在报出
+# 「AutoCAD MCP 解释器不存在」之前自己先崩，ci.ps1 只拿到 exit 1 和一段 traceback，
+# 真正的失败原因一个字都没落进日志 —— 错误路径长得像"工具坏了"而不是"契约不满足"。
+# errors="replace" 让中文照常显示、不可编码的字符退化成 ?，报错文本必须说得出话。
+try:
+    sys.stdout.reconfigure(errors="replace")
+except Exception:
+    pass
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = os.path.expanduser("~")
 

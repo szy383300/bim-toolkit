@@ -72,12 +72,36 @@ def main():
         _msg_box(u"当前模型未收集到任何非类型构件（可能模型为空或权限受限）。")
         return
 
+    def _floor_matches(fl, level_name):
+        u"""任务楼层 ↔ 构件楼层：先按**层号数值**对齐，再退回整词相等。
+
+        v3（2026-10-15）：原来是严格字符串相等——模板写 1F、项目楼层叫
+        「标高 1」，永远配不上，演示必得 0% 覆盖。层号对齐复用翻模侧
+        bimconv_rules._level_number_of（1F→1、标高 1→1、地下二层→-2、
+        屋面→None）；两边层号都读不出（屋面/机房这类）时退回整词比较。
+        """
+        fl = (fl or "").strip()
+        lv = (level_name or "").strip()
+        if not fl:
+            return True
+        if fl == lv:
+            return True
+        try:
+            from bimconv_rules import _level_number_of
+            a = _level_number_of(fl)
+            b = _level_number_of(lv)
+            if a is not None and b is not None:
+                return a == b
+        except Exception:
+            pass
+        return False
+
     def element_matches(task, el):
         u"""构件是否满足任务的 楼层/类别/类型 过滤条件。"""
         fl = (task.get(u"楼层") or "").strip()
         cat = (task.get(u"类别") or "").strip()
         typ = (task.get(u"类型") or "").strip()
-        if fl and el["Level"] != fl:
+        if fl and not _floor_matches(fl, el["Level"]):
             return False
         if cat and el["Category"] != cat:
             return False

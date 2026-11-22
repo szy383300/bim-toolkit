@@ -46,12 +46,23 @@ def main():
 
     # 预匹配：把每一行 CSV 展开成 (构件, 参数名, 新值) 计划
     plan = []
+    skipped = []
     for r in rows:
         cat_r = (r.get("Category") or "").strip()
         type_r = (r.get("Type") or "").strip()
         pname = (r.get("ParamName") or "").strip()
         val = (r.get("Value") or "").strip()
         if not pname:
+            continue
+        # 空值必须挡掉：写空串等于把该参数在**所有匹配构件**上清空。
+        # 模板占位串同理 —— 用户复制 batch_params.csv.example 后漏填就会被当成真值写入。
+        if not val:
+            skipped.append([(cat_r or type_r or u"?"), pname,
+                            u"Value 为空（写入会清空该参数），本行已跳过"])
+            continue
+        if val.startswith(u"<") or val.upper() in (u"TODO", u"XXX"):
+            skipped.append([(cat_r or type_r or u"?"), pname,
+                            u"Value 像是模板占位串「%s」，本行已跳过" % val])
             continue
         for e in to_element_list(all_model_elements(doc)):
             if cat_r and (e.Category.Name if e.Category else "") != cat_r:
@@ -62,6 +73,10 @@ def main():
 
     output.print_md(u"## 批量改参（**仅预览，未写入**）")
     output.print_md(u"_匹配到 %d 处参数修改计划。_" % len(plan))
+    if skipped:
+        output.print_md(u"### 已跳过 %d 行（不会写入）" % len(skipped))
+        output.print_html(html_table([u"Category/Type", u"ParamName", u"跳过原因"],
+                                      skipped))
 
     table_rows = []
     changed = 0

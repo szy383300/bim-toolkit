@@ -222,10 +222,8 @@ type "%APPDATA%\pyRevit\Extensions\BIMToolkit.extension\version.txt"
 ### 6.3 pyRevit 缺 DLL（历史上踩过，现已修复）
 
 若 Revit 启动报缺 `Xceed.Wpf.AvalonDock, Version=2.0.19.10`：这是 pyRevit 安装包打包缺陷
-（`bin\` 没带该 DLL）。先跑 `fix_pyrevit_dll.bat`（只读检测，不要管理员权限）确认哪几个引擎目录缺，
-再自己取一份正确版本交给脚本：`fix_pyrevit_dll.bat "<那份 dll 的完整路径>"`。
-**仓库不内置这颗 dll**——它是 Xceed 的第三方程序集，公开分发要带许可原文，理由与校验值见
-`tools\README.md`。脚本会核对程序集版本号，对不上直接拒绝（Revit 2019 自带的是 2.0.19.4，不是这一版）。
+（`bin\` 没带该 DLL）。仓库已打包正确版本 `tools\Xceed.Wpf.AvalonDock.dll`，
+双击 `fix_pyrevit_dll.bat` 自提权复制即可。
 
 > 本机 2026-10-01 实测：`C:\Program Files\pyRevit-Master\bin\Xceed.Wpf.AvalonDock.dll` **已在位**。
 

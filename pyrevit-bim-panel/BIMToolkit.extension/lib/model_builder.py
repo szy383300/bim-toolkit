@@ -35,6 +35,10 @@ except ImportError:
 # MaterialFunctionAssignment）；结构层一律按名字 "Structure" 比较。
 from Autodesk.Revit.DB.Structure import StructuralType
 
+# 建墙一律走 element_factory：全仓唯一的 Wall.Create 调用点，
+# 退化/NaN 坐标在进 Revit 之前就被挡掉（那种输入导致的是抓不住的 native crash）。
+import element_factory as ef
+
 # StrongBox：IronPython 里出参（out 参数）必须显式传 StrongBox[T]。
 #
 # 2026-10-02 真机修：这里原本写的是
@@ -303,16 +307,23 @@ def create_exterior_walls(doc, params, levels, warn=None):
             u"AI-W%d-%dmm" % (fi + 1, wall_t_mm), wall_t_mm, _w)
 
         made = 0
-        for pa, pb in wall_lines:
-            line = Line.CreateBound(pa, pb)
+        if my_wt is None:
+            fail += len(wall_lines)
+            _w(u"   第%d层没有可用墙类型，本层 %d 段全部跳过" % (
+                fi + 1, len(wall_lines)))
+        else:
             try:
-                w = Wall.Create(doc, line, my_wt.Id, levels[fi].Id,
-                                wall_h_ft, 0.0, False, False)
-                all_walls.append(w)
-                made += 1
-            except Exception as e:
+                created, failures = ef.create_walls(
+                    doc, wall_lines, levels[fi].Id, my_wt.Id, wall_h_ft)
+            except ef.BadInput as bi:
+                created, failures = [], [(i, to_text_safe(bi))
+                                         for i in range(len(wall_lines))]
+            all_walls.extend(created)
+            made = len(created)
+            for idx, reason in failures:
                 fail += 1
-                _w(u"   墙创建失败(第%d层): %s" % (fi + 1, to_text_safe(e)))
+                _w(u"   墙创建失败(第%d层 段#%d): %s" % (
+                    fi + 1, idx, to_text_safe(reason)))
 
         status = t.Commit()
         try:
@@ -378,16 +389,29 @@ def create_interior_walls(doc, params, levels, warn=None):
 
             p1 = XYZ(m(x1_m * 1000), m(y1_m * 1000), base_elev)
             p2 = XYZ(m(x2_m * 1000), m(y2_m * 1000), base_elev)
-            line = Line.CreateBound(p1, p2)
 
+            # JSON 里 start/end 写重（或整条漏填）会得到零长墙 —— 与 NaN 同属
+            # 不可捕获的 native crash 入口，必须先过段长下限再进 Wall.Create。
             try:
-                w = Wall.Create(doc, line, my_wt.Id, levels[fi].Id,
-                                wall_h_ft, 0.0, False, False)
-                all_int_walls.append(w)
-            except Exception as e:
+                segs, _dropped = ef.segments_from_points([p1, p2], min_len=m(10))
+            except ef.BadInput as bi:
+                fail += 1
+                _w(u"   内墙跳过(第%d层第%d道): %s" % (
+                    fi + 1, idx + 1, to_text_safe(bi)))
+                continue
+
+            if my_wt is None:
+                fail += 1
+                _w(u"   内墙无可用墙类型(第%d层第%d道)" % (fi + 1, idx + 1))
+                continue
+
+            created, failures = ef.create_walls(
+                doc, segs, levels[fi].Id, my_wt.Id, wall_h_ft)
+            all_int_walls.extend(created)
+            for _si, reason in failures:
                 fail += 1
                 _w(u"   内墙创建失败(第%d层第%d道): %s" % (
-                    fi + 1, idx + 1, to_text_safe(e)))
+                    fi + 1, idx + 1, to_text_safe(reason)))
 
         status = t.Commit()
         try:

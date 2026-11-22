@@ -214,7 +214,7 @@ CONFIG_PATH = os.path.join(HERE, "mcp_bridge_config.json")
 # 7.12.2 / 7.12.3 / 7.12.4 五轮修复（见下方各处 v7.12.x 注释，多数是
 # 2026-09-28 端到端评测实测出来的 2019 API 适配）。也就是说 `ping` 报的版本
 # **低报了 5 个补丁** —— 排查"装的桥是不是旧的"时，这个号恰恰最不能骗人。
-BRIDGE_VERSION = "7.13.0"
+BRIDGE_VERSION = "7.14.1"
 
 # lib/ of the extension (reuses cost_estimator / standards_checker)
 EXT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -223,6 +223,12 @@ if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)
 
 _MM = 1.0 / 304.8  # mm -> ft
+
+# 建墙走 lib/element_factory —— 全仓唯一的 Wall.Create 调用点。
+# 这里是**最需要一个守卫却偏偏没有**的那条路：坐标由外部 AI 通过 socket 传进来，
+# 而退化/NaN 曲线喂给 Wall.Create 触发的是 try/except 抓不住的原生闪退
+# （见 lib/bimconv_elements.py 与 lib/element_factory.py 的实录注释）。
+import element_factory as ef
 
 _WOULDBLOCK_ERRNOS = (10035, 11, 35)  # WSAEWOULDBLOCK / EAGAIN / EWOULDBLOCK
 
@@ -486,22 +492,120 @@ def do_get_levels(cmd):
     return {"levels": sorted(levels, key=lambda x: x["elevation_ft"])}
 
 
+def _family_name_of(fs):
+    u"""FamilySymbol 的族名安全读。fs.Family.Name 在 IPY 2.7 下抛
+    AttributeError（与 FamilySymbol.Name 同族的 new-slot 绑定雷），
+    旧 do_get_families 整段 except:pass 把它吞成**永远空表**（2026-10-15
+    真机实测：默认样板 719 个类型，get_families 返回 {}）。
+    回退走 ALL_MODEL_FAMILY_NAME_PARAM 内置参数。"""
+    try:
+        return to_text(fs.Family.Name)
+    except Exception:
+        pass
+    try:
+        p = fs.get_Parameter(BuiltInParameter.ALL_MODEL_FAMILY_NAME_PARAM)
+        if p is not None and p.HasValue:
+            v = p.AsString()
+            if v:
+                return to_text(v)
+    except Exception:
+        pass
+    return u""
+
+
 def do_get_families(cmd):
+    u"""列出族类型。v7.14.0：修复 fs.Family.Name 全抛导致恒空；并实现
+    category 过滤（原先参数被静默忽略——传了 category 也返回全部）。"""
+    want_cat = to_text(cmd.get("category") or "").strip()
     families = {}
+    n_total = 0
+    n_cat = 0
     for fs in FilteredElementCollector(doc).OfClass(FamilySymbol).ToElements():
         try:
-            fam_name = to_text(fs.Family.Name)
-            type_name = to_text(fs.Name)
+            n_total += 1
+            cat_name = to_text(fs.Category.Name) if fs.Category else u""
+            if want_cat and cat_name != want_cat:
+                continue
+            n_cat += 1
+            fam_name = _family_name_of(fs)
+            type_name = _type_name(fs, u"")
+            if not fam_name and not type_name:
+                continue
             if fam_name not in families:
                 families[fam_name] = []
             families[fam_name].append({
                 "type_name": type_name,
                 "id": fs.Id.IntegerValue,
-                "category": to_text(fs.Category.Name) if fs.Category else "",
+                "category": cat_name,
             })
         except Exception:
             pass
-    return {"families": families}
+    out = {"families": families, "n_symbols": n_cat}
+    if want_cat:
+        out["category"] = want_cat
+        out["n_symbols_total"] = n_total
+    return out
+
+
+# 宿主楼层参数名。这份名单是**在 Revit 2019 上 dir(BuiltInParameter) 实测出来的**，
+# 不是照 API 文档抄的——文档里的 WALL_LEVEL_PARAM / FLOOR_LEVEL_PARAM /
+# CEILING_LEVEL_WITH_PARAM / STAIR_BASE_LEVEL_PARAM 在这个版本里根本不存在
+# （2026-10-08 实测 hasattr 全 False），照抄会得到一张空候选表，
+# 于是所有墙的 level 静默变成 ""，`level` 过滤器对每层都返回 0，还不报错。
+# 墙上真正能取到楼层的是 WALL_BASE_CONSTRAINT（实测 -> 311 -> "标高 1"）。
+_LEVEL_PARAM_NAMES = (
+    "WALL_BASE_CONSTRAINT",
+    "LEVEL_PARAM",
+    "SCHEDULE_LEVEL_PARAM",
+    "FAMILY_BASE_LEVEL_PARAM",
+    "ROOF_BASE_LEVEL_PARAM",
+    "RBS_START_LEVEL_PARAM",
+    "FLOOR_LEVEL_PARAM",          # 存在则用，不存在被下面滤掉
+    "STAIR_BASE_LEVEL_PARAM",
+)
+# 按名字取而不是直接写枚举成员：版本间成员不一致（2019 也没有
+# ROOT_MATERIAL_PARAM），直接引用会让整个桥导入失败。
+_LEVEL_PARAM_CANDIDATES = tuple(
+    getattr(BuiltInParameter, _n) for _n in _LEVEL_PARAM_NAMES
+    if hasattr(BuiltInParameter, _n))
+if not _LEVEL_PARAM_CANDIDATES:
+    # 空候选表 = 这个函数以后只会返回 ""，正是上面那个 bug 的形态。宁可起不来。
+    raise RuntimeError(
+        u"BuiltInParameter 里找不到任何楼层参数名，"
+        u"level 读取会静默失效——请核对 Revit 版本的枚举成员")
+
+
+def _element_level_name(doc, elem):
+    u"""构件所属楼层名；取不到返回 ""。绝不抛。"""
+    for bip in _LEVEL_PARAM_CANDIDATES:
+        try:
+            p = elem.get_Parameter(bip)
+            if p is None:
+                continue
+            eid = p.AsElementId()
+            if eid is None or eid.IntegerValue <= 0:
+                continue
+            lv = doc.GetElement(eid)
+            if lv is not None and getattr(lv, "Name", None):
+                return to_text(lv.Name)
+        except Exception:
+            continue
+    # 兜底：命名参数都没命中时，扫一遍参数找值指向 Level 的那个。
+    # 跨类别、跨版本都有效，代价是 O(参数数)，只在前面全部落空时才走。
+    try:
+        for p in elem.Parameters:
+            try:
+                eid = p.AsElementId()
+            except Exception:
+                continue
+            if eid is None or eid.IntegerValue <= 0:
+                continue
+            t = doc.GetElement(eid)
+            if t is not None and type(t).__name__ == "Level" and getattr(t, "Name", None):
+                return to_text(t.Name)
+    except Exception:
+        pass
+    return ""
 
 
 def do_get_elements(cmd):
@@ -517,16 +621,8 @@ def do_get_elements(cmd):
                     "id": e.Id.IntegerValue,
                     "name": to_text(e.Name) if hasattr(e, "Name") else "",
                     "category": to_text(cat.Name),
-                    "level": "",
+                    "level": _element_level_name(doc, e),
                 }
-                try:
-                    level_param = e.get_Parameter(BuiltInParameter.FAMILY_LEVEL_PARAM)
-                    if level_param is None:
-                        level_param = e.get_Parameter(BuiltInParameter.FAMILY_BASE_LEVEL_PARAM)
-                    if level_param and level_param.AsElementId().IntegerValue > 0:
-                        elem_info["level"] = to_text(doc.GetElement(level_param.AsElementId()).Name)
-                except Exception:
-                    pass
                 results.append(elem_info)
                 if len(results) >= limit:
                     break
@@ -536,8 +632,20 @@ def do_get_elements(cmd):
 
 
 def do_get_element(cmd):
-    element_id = cmd.get("id", 0)
-    eid = ElementId(int(element_id))
+    # 工具 schema 声明的是 element_id，这里原先只读 "id" —— 按文档调用会拿到
+    # element_id=0，然后返回一个不相干的构件（实测返回"工程阶段信息"），
+    # 不报错、看着像成功。两个键都收，且明确拒绝缺参。
+    raw = cmd.get("element_id")
+    if raw is None:
+        raw = cmd.get("id")
+    if raw is None:
+        return {"error": "需要 element_id"}
+    try:
+        eid = ElementId(int(raw))
+    except Exception:
+        return {"error": "element_id 不是整数: %r" % (raw,)}
+    if eid.IntegerValue <= 0:
+        return {"error": "element_id 非法: %s" % (raw,)}
     elem = doc.GetElement(eid)
     if elem is None:
         return {"error": "Element not found"}
@@ -580,15 +688,26 @@ def do_get_selected(cmd):
 
 # ---- atomic write tools ----------------------------------------------------
 
-def _wall_type_for(thickness_mm):
-    """Find-or-create basic wall type of given total thickness (named reuse)."""
+def _wall_type_for(thickness_mm, cache=None):
+    u"""Find-or-create basic wall type of given total thickness (named reuse).
+
+    v7.14.0 修复（2026-10-15 真机实锤）：按名比对原先写 `to_text(wt.Name)`，
+    而 WallType 在 IPY 2.7 下访问 .Name 抛 AttributeError —— 比对**永远失败**，
+    于是每次都走 Duplicate：同事务第二面墙 Duplicate 重名抛 → 静默
+    `return base`（样板第一个基本墙，实测 138mm 隔断）。用户请求 200mm，
+    4 面墙全建成 138mm 且响应报 created 无 error —— 谎报成功 + 几何全错。
+    修法：名字一律走 _type_name（SYMBOL_NAME_PARAM，2019 安全），调用方
+    传 cache 让同批同厚只解析一次（跨事务不缓存，防持有已回滚对象）。
+    """
     name = u"MCP-W-%dmm" % int(round(thickness_mm))
+    key = int(round(thickness_mm))
+    if cache is not None and key in cache:
+        return cache[key]
     for wt in to_element_list(FilteredElementCollector(doc).OfClass(WallType)):
-        try:
-            if to_text(wt.Name) == name:
-                return wt
-        except Exception:
-            pass
+        if _type_name(wt, u"") == name:
+            if cache is not None:
+                cache[key] = wt
+            return wt
     base = None
     for wt in to_element_list(FilteredElementCollector(doc).OfClass(WallType)):
         try:
@@ -602,6 +721,7 @@ def _wall_type_for(thickness_mm):
     try:
         new_wt = base.Duplicate(name)
     except Exception:
+        # 真建不出类型（如只读文档）才回退 base，并让调用方能看见
         return base
     try:
         cs = new_wt.GetCompoundStructure()
@@ -620,6 +740,8 @@ def _wall_type_for(thickness_mm):
             new_wt.SetCompoundStructure(cs)
     except Exception:
         pass
+    if cache is not None:
+        cache[key] = new_wt
     return new_wt
 
 
@@ -640,6 +762,7 @@ def do_create_walls(cmd):
     created = 0
     errors = []
     made_ids = []  # v7.10.0: 返回新建墙 id（材质赋值/后续操作需要）
+    wt_cache = {}  # v7.14.0: 同批同厚只解析一次类型（防事务内重复 Duplicate）
     for i, w in enumerate(walls):
         try:
             s = w.get("start") or []
@@ -661,15 +784,18 @@ def do_create_walls(cmd):
             p1 = XYZ(float(e[0]) * _MM, float(e[1]) * _MM, lvl.Elevation + z_off)
             h = float(w.get("height_mm", 3000)) * _MM
             thickness = float(w.get("thickness_mm", 200))
-            wt = _wall_type_for(thickness)
+            wt = _wall_type_for(thickness, cache=wt_cache)
             if wt is None:
                 errors.append("wall {}: no basic wall type available".format(i))
                 continue
-            line = Line.CreateBound(p0, p1)
-            wall_el = Wall.Create(doc, line, wt.Id, lvl.Id, h, 0.0,
-                                  False, False)
-            made_ids.append(wall_el.Id.IntegerValue)
-            created += 1
+            segs, _dropped = ef.segments_from_points([p0, p1], min_len=10.0,
+                                                     scale=_MM)
+            made, failures = ef.create_walls(doc, segs, lvl.Id, wt.Id, h)
+            if failures:
+                errors.append("wall {}: {}".format(i, failures[0][1]))
+            for _w in made:
+                made_ids.append(_w.Id.IntegerValue)
+            created += len(made)
         except Exception as ex:
             errors.append("wall {}: {}".format(i, to_text(ex)))
 
@@ -706,6 +832,13 @@ def do_set_parameters(cmd):
         return {"error": "category not found: {}".format(cat_name)}
 
     t = Transaction(doc, "MCP set_parameters")
+    # v7.14.1：补挂失败抑制器——其它写命令都有，唯独这里漏了。真机实锤
+    # （2026-10-15 两份 Revit 错误报告）：批量给墙刷同一「标记」触发
+    # 「图元具有重复的标记值」警告，Commit 时弹模态框阻塞 UI 线程，
+    # ExternalEvent 回包卡在弹窗后面 → 客户端超时（事务其实已提交），
+    # 同队列后续命令的响应一并丢失。
+    _install_failure_preprocessor(t)
+    del _MCP_LAST_FAILURES[:]
     t.Start()
     try:
         els = to_element_list(
@@ -1175,16 +1308,7 @@ def do_query_elements(cmd):
                     info["name"] = to_text(e.Name)
             except Exception:
                 pass
-            try:
-                lp = e.get_Parameter(BuiltInParameter.FAMILY_LEVEL_PARAM)
-                if lp is None:
-                    lp = e.get_Parameter(
-                        BuiltInParameter.FAMILY_BASE_LEVEL_PARAM)
-                if lp and lp.AsElementId().IntegerValue > 0:
-                    info["level"] = to_text(
-                        doc.GetElement(lp.AsElementId()).Name)
-            except Exception:
-                pass
+            info["level"] = _element_level_name(doc, e)
             if level_name and info["level"] != level_name:
                 continue
             if name_contains and name_contains not in info["name"]:
@@ -1531,7 +1655,12 @@ def do_create_door_window(cmd):
                 continue
             plan = {
                 "element_type": kind,
-                "geom": {"type": "insert", "point": [pt[0], pt[1], 0.0]},
+                # v7.14.0 修复：z 原先硬编码 0.0，而墙曲线在 lvl.Elevation 上
+                # ——非首层门窗 3D 距墙恒等于层高，全部被 2000mm 上限拒收
+                # （2026-10-15 真机实测：TEST 层(6m) 门窗报"距最近墙 6000mm"）。
+                # 寄宿点必须与宿主墙同高，距离判定才有意义。
+                "geom": {"type": "insert",
+                         "point": [pt[0], pt[1], lvl.Elevation / _MM]},
                 "level": to_text(lvl.Name),
                 "height": height_mm,
             }
@@ -1805,13 +1934,39 @@ def do_create_roof_gable(cmd):
             except Exception:
                 pass
         except Exception as ex2:
-            t.RollBack()
-            return {"error": "NewFootPrintRoof failed: %s | %s" % (
-                to_text(ex1)[:120], to_text(ex2)[:120]),
-                    "diag": "CurveArray/Level/RoofType 均已核验非空；"
-                            "2019 唯一重载 = NewFootPrintRoof(CurveArray, "
-                            "Level, RoofType, out ModelCurveArray)。异常来自 "
-                            "Revit 内部，非参数缺失 —— 需 Revit 侧单步调试。"}
+            # v7.14.0 第三级兜底：两条 NewFootPrintRoof 路径都炸（2026-10-15
+            # 真机实测 "Value cannot be null"，Revit 内部异常、非参数缺失）时
+            # 降级为平楼板占位 —— 与 genbuild 宏 gable_roof 的楼板兜底同思路。
+            # 降级必须显式可见，不许装成屋顶建成了。
+            try:
+                try:
+                    t.RollBack()
+                except Exception:
+                    pass
+                ftypes = list(FilteredElementCollector(doc)
+                              .OfClass(FloorType).ToElements())
+                if not ftypes:
+                    raise Exception(u"没有 FloorType 可兜底")
+                t2 = Transaction(doc, u"MCP create_roof_gable(degraded)")
+                _install_failure_preprocessor(t2)
+                del _MCP_LAST_FAILURES[:]
+                t2.Start()
+                fl = doc.Create.NewFloor(profile, ftypes[0], lvl, False)
+                st2 = t2.Commit()
+                if to_text(st2) != "Committed":
+                    raise Exception(u"兜底楼板提交 %s" % to_text(st2))
+                return {"created": 1, "id": fl.Id.IntegerValue,
+                        "degraded": u"floor",
+                        "note": u"NewFootPrintRoof 两条重载均失败"
+                                u"（%s），已降级为平楼板占位"
+                                % to_text(ex1)[:100]}
+            except Exception:
+                return {"error": "NewFootPrintRoof failed: %s | %s" % (
+                    to_text(ex1)[:120], to_text(ex2)[:120]),
+                        "diag": "CurveArray/Level/RoofType 均已核验非空；"
+                                "2019 唯一重载 = NewFootPrintRoof(CurveArray, "
+                                "Level, RoofType, out ModelCurveArray)。异常来自 "
+                                "Revit 内部，非参数缺失 —— 需 Revit 侧单步调试。"}
     if roof is None:
         t.RollBack()
         return {"error": "roof is None"}
@@ -2044,15 +2199,17 @@ def do_create_railing(cmd):
             if not wts:
                 raise Exception("no WallType in doc")
             wtype = wts[0]
-        ids = []
+        segs = []
         for k in range(len(pts) - 1):
             a = pts[k]
             b = pts[k + 1]
             pa = XYZ(float(a[0]) * _MM, float(a[1]) * _MM, lvl.Elevation)
             pb = XYZ(float(b[0]) * _MM, float(b[1]) * _MM, lvl.Elevation)
-            w = Wall.Create(doc, Line.CreateBound(pa, pb), wtype.Id, lvl.Id,
-                            height, 0.0, False, False)
-            ids.append(w.Id.IntegerValue)
+            segs.append((pa, pb))
+        made, failures = ef.create_walls(doc, segs, lvl.Id, wtype.Id, height)
+        for _fi, _reason in failures:
+            errs.append("railing seg %d: %s" % (_fi, to_text(_reason)))
+        ids = [w.Id.IntegerValue for w in made]
         status = t.Commit()
         if to_text(status) != "Committed":
             return {"error": "railing(wall) commit failed (%s)" % to_text(status),
@@ -2118,18 +2275,44 @@ def do_set_material(cmd):
     if not ids and cmd.get("category"):
         r = do_get_elements({"category": cmd.get("category"), "limit": 500})
         ids = [e["id"] for e in r.get("elements", [])]
+    # 2026-10-07 真机核实：Revit 2019 的 BuiltInParameter 里**没有**
+    # ROOT_MATERIAL_PARAM（hasattr 为 False；HOST_MATERIAL_PARAM /
+    # ROOM_FINISH_MATERIAL 同样不存在），而且墙实例上没有任何名字含
+    # "Material" 的参数。原来的写法每次都在 `except: continue` 里静默吃掉
+    # AttributeError，然后返回 {"assigned": 0} —— 没有 error 键，
+    # process_command 判成 ok:true，审计里留下一条"成功"。这是假成功，不是失败。
+    if not hasattr(BuiltInParameter, "ROOT_MATERIAL_PARAM"):
+        return {"error": u"当前 Revit 版本的 BuiltInParameter 里没有 "
+                         u"ROOT_MATERIAL_PARAM，本命令无法给实例赋材质；"
+                         u"改材质要走墙类型复合结构（CompoundStructure），"
+                         u"不在本命令能力内。"}
     n = 0
+    failed = []
     for i in ids[:500]:
         try:
             e = doc.GetElement(ElementId(int(i)))
             p = e.get_Parameter(BuiltInParameter.ROOT_MATERIAL_PARAM)
-            if p is not None and not p.IsReadOnly:
-                p.Set(mat.Id)
+            if p is None:
+                failed.append(u"%s: 没有该参数" % i)
+            elif p.IsReadOnly:
+                failed.append(u"%s: 参数只读" % i)
+            elif not p.Set(mat.Id):
+                # Set() 返回 False 是"没写进去"，不抛异常 —— 必须判返回值，
+                # 否则计数会虚报成功。
+                failed.append(u"%s: Parameter.Set() 返回 False" % i)
+            else:
                 n += 1
-        except Exception:
-            continue
-    return {"assigned": n, "material": to_text(mat.Name),
-            "id": mat.Id.IntegerValue}
+        except Exception as ex:
+            failed.append(u"%s: %s" % (i, to_text(ex)))
+    out = {"assigned": n, "material": to_text(mat.Name),
+           "id": mat.Id.IntegerValue}
+    if n == 0 and ids:
+        out["error"] = u"一个都没赋上（请求 %d 个）。前 3 条原因：%s" % (
+            len(ids[:500]), u" | ".join(failed[:3]))
+    elif failed:
+        out["partial_failure"] = u"%d 个失败，前 3 条：%s" % (
+            len(failed), u" | ".join(failed[:3]))
+    return out
 
 
 # ---------------------------------------------------------------------------

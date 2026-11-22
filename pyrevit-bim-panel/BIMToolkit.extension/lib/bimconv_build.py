@@ -27,7 +27,8 @@ if DB is None:
 
 from bimconv_elements import (_level_id, _create_grid, _create_wall, _create_column,
                               _create_slab, _create_stair, _create_door_window,
-                              _create_room, _create_beam)
+                              _create_room, _create_beam, pick_column_symbol,
+                              _column_pool)
 from bimconv_walls import _build_wall_index, _join_walls
 # v2.8: 实测厚度 → 复用/复制对应厚度墙类型（DWG-240厚 等）。
 # model_builder 顶部直连 Autodesk.Revit.DB，headless 导入会炸——必须带守卫，
@@ -44,6 +45,20 @@ except Exception:
             return et.Name
         except Exception:
             return u""
+
+
+# 「按所选模式有意跳过」的标记串。结果列表只有 (bool, str, elem)，
+# 没有地方放"这是跳过而不是失败"，所以用一个两边共享的常量做分类，
+# 而不是在调用方再抄一遍中文（抄一遍就会漂）。
+SAFE_SKIP_TAG = u"安全模式已跳过"
+
+
+def is_by_design_skip(reason):
+    u"""结果原因是否属于「按所选模式有意跳过」，而非真正建不出来。"""
+    try:
+        return bool(reason) and SAFE_SKIP_TAG in reason
+    except Exception:
+        return False
 
 
 # FailureHandlingOptions 失败抑制（思路参考开源 manicotti 的 FailureSwallower.cs）：
@@ -265,7 +280,13 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
             # 远小于风险；调用方明确传 True 才开启。
             join_walls = False
         if door_window_cut is None:
-            door_window_cut = len(planned) <= 200
+            # 以前这里是 `len(planned) <= 200`：计划数一过 200 就整个关掉开洞。
+            # 真实施工图没有一张低于 200（实测 r2/r4 计划上万），等于**任何真图
+            # 都拿不到洞口**，而"常规模式"标签却写着"含门/窗开洞"。
+            # 之所以敢放开：v2.5c 的逐件补救早已把"崩了"的粒度做到单个构件
+            # （每件独立事务，坏一个弃一个），不需要再用整开关兜底。
+            # 门窗另外用更小的批次提交（见阶段 C），一次回滚最多牵连 10 个。
+            door_window_cut = True
     if batch_size is None:
         # 事务上限调小：单事务构件数越少，越不容易触发 Revit 大事务原生崩溃，
         # 且一旦某个坏图元漏网，最多只损失一个小批次而非整批回滚。
@@ -303,17 +324,32 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
         wall_types = _preferred + [w for w in _basic_walls
                                    if w not in _preferred]
     floor_types = list(DB.FilteredElementCollector(doc).OfClass(DB.FloorType).ToElements())
-    all_syms = list(DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol).ToElements())
-    col_syms = [s for s in all_syms
-                if s.Category and (u"\u67f1" in (s.Category.Name or "")
-                                   or "column" in (s.Category.Name or "").lower())]
+    # \u67f1\u6c60\u5fc5\u987b\u8d70 _column_pool\uff08\u6536\u96c6\u5668\u7ea7 OfCategory\uff09\u3002\u8fd9\u91cc\u539f\u5148\u5199\u7684\u662f
+    # `s.Category.Name` \u542b"\u67f1"\u2014\u2014\u771f\u673a\u5b9e\u6d4b\u90a3\u4e2a\u7b5b\u6cd5**\u4e00\u4e2a\u90fd\u627e\u4e0d\u5230**\uff0c
+    # \u4e8e\u662f col_syms \u6052\u7a7a\u3001\u67f1\u5168\u9760\u4e0b\u9762\u7684 all_syms \u9519\u8bef\u515c\u5e95\u624d\u5efa\u5f97\u51fa\u6765\u3002
+    # \u8be6\u89c1 bimconv_elements._column_pool \u7684\u5b9e\u6d4b\u8bb0\u5f55\u3002
+    col_syms = _column_pool(doc)
     # 门/窗要用对应族（早期 get_sym 只认柱，会把窗建成立柱——这里拆出专用池）
-    door_syms = [s for s in all_syms
-                 if s.Category and (u"\u95e8" in (s.Category.Name or "")
-                                    or "door" in (s.Category.Name or "").lower())]
-    window_syms = [s for s in all_syms
-                   if s.Category and (u"\u7a97" in (s.Category.Name or "")
-                                      or "window" in (s.Category.Name or "").lower())]
+    # ⚠️ 三个池一律用收集器级 OfCategory，**不要**再对 OfClass(FamilySymbol)
+    # 的结果按 `s.Category.Name` 筛。真机实测（仙湖别墅.rvt 2026-10-08）：
+    #   门  按名筛 0 个  vs  OfCategory(OST_Doors)   12 个
+    #   窗  按名筛 0 个  vs  OfCategory(OST_Windows) 31 个
+    #   柱  按名筛 0 个  vs  OfCategory(OST_Columns)  3 个
+    # 也就是说这三个池以前**恒为空**：门窗从来没被建出来过，却报"项目中没有
+    # 可用的门窗族"（把筛法 bug 报成了缺资源）；柱能建出来全靠当时那句
+    # `else all_syms` 的错误兜底。见 bimconv_elements._column_pool。
+    def _syms_of(bic):
+        if bic is None:
+            return []
+        try:
+            return list(DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol)
+                        .OfCategory(bic).ToElements())
+        except Exception:
+            return []
+
+    _bic = getattr(DB, "BuiltInCategory", None)
+    door_syms = _syms_of(getattr(_bic, "OST_Doors", None) if _bic else None)
+    window_syms = _syms_of(getattr(_bic, "OST_Windows", None) if _bic else None)
 
     def _pick(pool, hint):
         if not pool:
@@ -334,8 +370,10 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
 
     def get_sym(hint):
         if hint not in sym_cache:
-            base = col_syms if col_syms else all_syms
-            sym_cache[hint] = _pick(base, hint)
+            # 不再 `col_syms if col_syms else all_syms`：没有柱族时退到"任意族类型
+            # 首枚"会把一扇门当柱建，而且结果取决于收集器顺序。缺族就明确失败
+            # （门窗侧 v2.9 已是这个口径）。见 bimconv_elements.pick_column_symbol。
+            sym_cache[hint] = pick_column_symbol(col_syms, hint)
         return sym_cache[hint]
 
     def get_ft(hint):
@@ -370,7 +408,12 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
         return result
 
     def _count_model_elems():
-        u"""全模型非类型构件计数（落盘对账基准；失败返回 -1）。"""
+        u"""全模型非类型构件计数（落盘对账基准；失败返回 -1）。
+
+        ElementIsElementTypeFilter 的构造参数是 invert：True = 只放行实例。
+        2026-10-07 真机量过（Filter(True) 与 WhereElementIsNotElementType()
+        同为 18 堵墙，Filter(False) 是 35 个 WallType）。
+        """
         try:
             col = DB.FilteredElementCollector(doc).WherePasses(
                 DB.ElementIsElementTypeFilter(True))
@@ -412,6 +455,23 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
     # ---- 预缓存楼层 + 平面视图（避免逐构件全库扫描）----
     _level_cache = {}
     _room_view_cache = {}
+    # 层高表：楼层名 -> 到上一层的标高差（毫米）。
+    # 平面图里**根本没有墙高**这个信息，以前一律吃 CSV 写死的 3000。
+    # 一旦本图落到正确楼层，层高就能从模型自己的 Level 算出来，
+    # 所以 CSV 的 height 留空/0 = 「跟随本层层高」，只有特意矮的构件
+    # （阳台栏板 1100 等）才在 CSV 里写死。
+    _storey_mm = {}
+    try:
+        _lv_list = []
+        for lv in DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements():
+            _lv_list.append((lv.Elevation, lv.Name, lv.Id))
+        _lv_list.sort()
+        for _i, (_el, _nm, _id) in enumerate(_lv_list):
+            if _i + 1 < len(_lv_list):
+                # 英尺 -> 毫米
+                _storey_mm[unicode(_nm)] = (_lv_list[_i + 1][0] - _el) * 304.8
+    except Exception:
+        _storey_mm = {}
     try:
         for lv in DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements():
             _level_cache[lv.Name] = lv.Id
@@ -427,17 +487,25 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
     # ---- 阶段 A：先建所有墙，并收集墙线曲线（门/窗需寄宿其上）----
     wall_plans = [p for p in planned if p["element_type"] == "wall"]
     other_plans = [p for p in planned if p["element_type"] != "wall"]
-    ordered_plans = list(wall_plans) + list(other_plans)  # results 同序，供逐件补救定位
+    # 门/窗单独一阶段（阶段 C），放在最后：开洞是整条链路上最重的几何运算，
+    # 且必须在墙全部落盘并建好空间索引之后才做得动。
+    opening_plans = [p for p in other_plans if p["element_type"] in ("door", "window")]
+    rest_plans = [p for p in other_plans if p["element_type"] not in ("door", "window")]
+    ordered_plans = list(wall_plans) + list(rest_plans) + list(opening_plans)
+    # results 与 ordered_plans 同序，供逐件补救定位。
+    # bat_of[i] = 第 i 个构件当时落在第几个批次事务里。**必须显式记**：
+    # 原先用 `i // batch_size` 反推，一旦各阶段批大小不同就会指错批次，
+    # 把已落盘的构件拿去重试、或漏掉真正被回滚的那批。
+    bat_of = []
 
     # v2.5c: 单计划→构件的公共派发（主流程与逐件补救共用）
     def _make_one(plan, win_wall_index=None):
         et = plan["element_type"]
         # v2.8d: 安全模式连门/窗也跳过——宿主窗放置时会自动切墙洞（动墙几何），
         # 与「只出骨架」承诺冲突；三崩教训：任何额外几何处理都可能引爆核失败。
+        # 走 SAFE_SKIP_TAG 而不是裸中文：调用方要靠同一个常量把它和真失败分开。
         if safe_mode and et in ("stair", "door", "window", "beam"):
-            raise Exception(u"安全模式已跳过：%s" % et)
-        if safe_mode and et == "stair":
-            raise Exception(u"安全模式已跳过：楼梯")
+            raise Exception(SAFE_SKIP_TAG + (u"：%s" % et))
         level_id = _level_id(doc, plan["level"], _level_cache)
         if level_id is None:
             raise Exception(u"找不到目标楼层「%s」，已跳过" % plan["level"])
@@ -447,6 +515,16 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
             wt = get_wt(plan["type_hint"])
             if not wt:
                 raise Exception(u"项目中没有可用的墙类型（WallType），已跳过")
+            if not plan.get("height"):
+                # CSV 里 height 留空 = 跟随本层层高（平面图不含墙高信息，
+                # 写死 3000 是猜的；落到正确楼层后模型自己知道层高）
+                _sh = _storey_mm.get(unicode(plan.get("level") or u""))
+                if _sh and _sh > 300.0:
+                    plan = dict(plan)
+                    plan["height"] = _sh
+                    plan["note"] = ((plan.get("note") or u"") +
+                                    u"；高按层高 %dmm" % int(round(_sh))
+                                    ).strip(u"； ")
             # v2.8: 双线轮廓取中的实测厚度 → 选/建对应厚度墙类型
             wt = wt_for_thickness(wt, plan.get("thickness_mm"))
             return _create_wall(doc, plan, level_id, wt,
@@ -485,25 +563,39 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
             return _create_beam(doc, plan, level_id)
         raise Exception(u"暂不支持的构件类型：%s" % et)
 
-    for plan in wall_plans:
-        bat.tick()
-        try:
-            el = _make_one(plan)
-            results.append((True, u"成功", el))
-        except Exception as ex:
-            results.append((False, u"%s" % ex, None))
+    def _run(plans, wall_index=None):
+        u"""按当前批次跑一组构件，并记下每个构件属于第几批。"""
+        for plan in plans:
+            bat.tick()
+            _b = len(bat.statuses)
+            try:
+                el = _make_one(plan, wall_index)
+                results.append((True, u"成功", el))
+            except Exception as ex:
+                results.append((False, u"%s" % ex, None))
+            bat_of.append(_b)
+
+    _run(wall_plans)
 
     # 墙线空间索引：门/窗就近寄宿快速查找
     wall_index = _build_wall_index(walls_with_curves) if walls_with_curves else None
 
-    # ---- 阶段 B：建其余构件；门/窗寄宿最近墙并自动开洞 ----
-    for plan in other_plans:
-        bat.tick()
-        try:
-            el = _make_one(plan, wall_index)
-            results.append((True, u"成功", el))
-        except Exception as ex:
-            results.append((False, u"%s" % ex, None))
+    # ---- 阶段 B：其余构件（板/柱/楼梯/房间/梁…）----
+    _run(rest_plans, wall_index)
+
+    # ---- 阶段 C：门/窗。放最后、单独小批次 ----
+    # 开洞是最重的几何运算（真图 05.dwg 两次原生崩溃实录），所以：
+    #   1) 必须等墙全部落盘并建好索引后再做；
+    #   2) 批次切到 10，一次回滚最多牵连 10 个，随后逐件补救只重试这 10 个。
+    if opening_plans:
+        bat.finish()
+        bat = _Batch(doc, out, len(opening_plans), size=10)
+        _run(opening_plans, wall_index)
+        n_open_ok = sum(1 for r in results[len(results) - len(opening_plans):] if r[0])
+        if out is not None:
+            out.print_md(u"  🚪 门窗阶段完成：**%d / %d** 落盘（单独小批次提交，"
+                         u"失败逐个跳过不拖垮整批）"
+                         % (n_open_ok, len(opening_plans)))
 
     bat.finish()
 
@@ -533,9 +625,10 @@ def create_elements(doc, planned, out=None, batch_size=None, join_walls=None,
         if "Committed" not in _st:
             bad_batches.add(_bi)
     if bad_batches and out is not None:
-        _size = bat.size or batch_size
-        redo = [i for i in range(min(len(results), len(ordered_plans)))
-                if results[i][0] and (i // _size) in bad_batches]
+        # 用显式记录的 bat_of 定位，不用 i // batch_size 反推：
+        # 各阶段批大小不同（门窗是 10），反推会指错批次。
+        redo = [i for i in range(min(len(results), len(bat_of)))
+                if results[i][0] and bat_of[i] in bad_batches]
         out.print_md(u"  🛟 %d 个批次提交被回滚——启动逐件补救，重试 %d 个"
                      u"（每件独立事务，坏一个弃一个）" % (len(bad_batches), len(redo)))
         _fixed = 0

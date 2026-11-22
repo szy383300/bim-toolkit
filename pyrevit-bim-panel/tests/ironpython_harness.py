@@ -252,11 +252,18 @@ def _install_native_stubs():
             self.Title = None
             self.Filter = None
             self.FileName = None
+            # 真 WinForms 上 Multiselect=True 后 FileNames 才是全部选中项；
+            # 桩必须一起提供，否则按钮改成多选后测试台只会返回空列表，
+            # "选了一套图"这条主路径又变成测不到的死区。
+            self.FileNames = ()
+            self.Multiselect = False
 
         def ShowDialog(self):
             path = SWF_CTRL.get("open_file")
             if path:
-                self.FileName = path
+                names = list(path) if isinstance(path, (list, tuple)) else [path]
+                self.FileNames = tuple(names)
+                self.FileName = names[0]
                 return DialogResult.OK
             return DialogResult.Cancel
 
@@ -272,7 +279,7 @@ def _install_native_stubs():
     forms_m.OpenFileDialog = OpenFileDialog
     forms_m.SaveFileDialog = SaveFileDialog
     # 其余 WinForms 表面（Form/TextBox/Button/Label/ListBox/Clipboard/Application…）
-    # 由宽松补齐负责，AI 指令 / 翻模体检 会用到它们。
+    # 由宽松补齐负责，AI 指令 等按钮会用到它们。
     _fill(forms_m, "System.Windows.Forms")
 
     sys_m.Windows = win_m
@@ -473,6 +480,14 @@ def _test_dwg_mode_gate(tmp):
                 got = calls[0].get("safe_mode")
                 assert got is safe_expect, (
                     u"用例%d：safe_mode=%r，期望 %r" % (idx, got, safe_expect))
+                # 开洞开关**只能由 lib 决定**。按钮里以前另写了一道
+                # `door_window_cut=(not big) and (not safe)`（big=计划数>200），
+                # 与 lib 里那道同名的阈值重复；拆掉 lib 那道后，调用方的显式传值
+                # 把它整个覆盖掉，真机重跑门窗仍 0 寄宿。所以这里断言必须是 None。
+                _dwy = calls[0].get("door_window_cut", "__缺参__")
+                assert _dwy is None, (
+                    u"用例%d：door_window_cut 应由 lib 决定（传 None），"
+                    u"实得 %r —— 按钮里不要再写第二道规模阈值" % (idx, _dwy))
 
         # ⑤ 脏文档闸门：模型里已有墙必须**硬阻断**（DWG翻模/script.py:359-378，
         #    三崩实录换来的规则：残墙叠新墙 -> 墙重叠风暴 -> Revit 崩）。
@@ -516,6 +531,17 @@ def _test_batch_params_gate(tmp):
     with open(script_path, "rb") as f:
         src = f.read().decode("utf-8-sig")
 
+    # 自己造 CSV，不再依赖随包扩展目录的 batch_params.csv ——
+    # 那份文件此前是活数据（墙 / 标记 / TEST-001），点一次确认就改项目，
+    # 已于 2026-10-07 从扩展里移除；扩展只带 batch_params.csv.example。
+    from bimlib import write_csv_unicode
+    csv_out = os.path.join(tmp, rel[0], "batch_params.csv")
+    write_csv_unicode(csv_out,
+                      [u"Category", u"Type", u"ParamName", u"Value"],
+                      [[u"墙", u"", u"标记", u"BMT-GATE-01"],      # 合法，应写入
+                       [u"墙", u"", u"标记", u""],                 # 空值，必须被跳过
+                       [u"墙", u"", u"标记", u"<填写真实值>"]])      # 占位串，必须被跳过
+
     calls = []
     real_set = bimlib.set_param
 
@@ -539,13 +565,21 @@ def _test_batch_params_gate(tmp):
         exec(compile(src, script_path, "exec"), _exec_globals(script_path))
         assert calls, (
             u"确认后应写入，实际 set_param 一次都没被调用 —— "
-            u"多半是 batch_params.csv 与 mock 构件不匹配（plan 为空）")
+            u"多半是测试造的 CSV 与 mock 构件不匹配（plan 为空）")
+        # ③ 空值/占位串一行都不许落盘（写空串等于清空该参数）
+        bad = [c for c in calls if c[1] != u"BMT-GATE-01"]
+        assert not bad, (
+            u"空 Value / 模板占位串被当成真实值写入了：%s" % (bad[:3],))
     finally:
         bimlib.set_param = real_set
         SWF_CTRL["taskdlg_answer"] = None
+        try:
+            os.remove(csv_out)
+        except OSError:
+            pass
 
-    sys.stderr.write("PASS  logic: 批量改参 写入闸门（取消不写 / 确认才写，%d 处）\n"
-                     % len(calls))
+    sys.stderr.write("PASS  logic: 批量改参 写入闸门（取消不写 / 确认才写 / "
+                     "空值与占位串跳过，%d 处）\n" % len(calls))
 
 
 def main(argv=None):
@@ -580,12 +614,296 @@ def main(argv=None):
     assert health_grade(70).startswith(("C", "D")), health_grade(70)
     sys.stderr.write("PASS  logic: health_score / health_grade\n")
 
+    # ---- 规范审查三态：缺数据必须显式 not_checked，不能"少一条记录" ----
+    # 病根：少记录 -> 少扣分 -> 空模型也能拿 95 分"优秀"。
+    from standards_checker import check_energy, check_fire, check_structure
+    _en = check_energy({u"wall_thickness_mm": 250},
+                       {u"energy": {u"min_wall_insulation_mm": 0}})
+    assert len(_en) == 1 and _en[0][u"status"] == u"not_checked", (
+        u"节能阈值缺失时应产出 1 条 not_checked，实得 %r —— "
+        u"静默返回空列表就是 95 分假绿灯的来源" % (_en,))
+    _fi = check_fire({u"building_height_mm": 0, u"floor_heights_mm": []},
+                     {u"fire": {}})
+    assert any(c[u"status"] == u"not_checked" for c in _fi), (
+        u"取不到建筑高度时防火应报 not_checked，而不是按 0m 判 pass：%r" % (_fi,))
+    _st = check_structure({u"wall_thickness_mm": 0, u"floor_heights_mm": []},
+                          {u"structure": {u"min_wall_thickness_mm": 160}})
+    assert any(c[u"status"] == u"not_checked" for c in _st), (
+        u"取不到墙厚时结构类应报 not_checked，而不是静默跳过：%r" % (_st,))
+    sys.stderr.write("PASS  logic: 规范审查三态（not_checked 不再隐身）\n")
+
+    # ---- 构件工厂：退化/NaN 输入必须在 Wall.Create 之前就被挡住 ----
+    # 依据 bimconv_elements.py:149 的实录：喂给 Wall.Create 退化或 NaN 曲线
+    # 触发的是**不可捕获的 Revit 原生闪退**，所以守卫只能在上游。
+    import element_factory as ef
+
+    class _P(object):
+        def __init__(self, *c):
+            self.c = [float(x) for x in c]
+
+        def DistanceTo(self, o):
+            s = 0.0
+            for i in range(len(self.c)):
+                d = self.c[i] - o.c[i]
+                s += d * d
+            return s ** 0.5
+
+        def __getitem__(self, i):
+            return self.c[i]
+
+    # Revit 的真 XYZ 有 .X/.Y/.Z 与索引器，但**没有 len() 也不能切片**。
+    # 工厂早期版本用 len(p)/p[:3] 判点，在真 XYZ 上直接 TypeError ——
+    # 守卫比它要防的坏输入更早崩。这个替身就是为锁死那次修复而存在。
+    class _XYZLike(object):
+        def __init__(self, x, y, z):
+            self.X, self.Y, self.Z = x, y, z
+
+    assert ef.point_ok(_XYZLike(1.0, 2.0, 0.0)), \
+        u"coords_of 必须认得只有 .X/.Y/.Z 的 Revit XYZ"
+    assert not ef.point_ok(_XYZLike(float("nan"), 2.0, 0.0)), \
+        u"XYZ 上的 NaN 也必须被 point_ok 挡住"
+    try:
+        ef.segments_from_points([_XYZLike(0, 0, 0), _XYZLike(float("inf"), 0, 0)])
+        raise AssertionError(u"inf 坐标应抛 BadInput")
+    except ef.BadInput:
+        pass
+
+    _nan = _P(float("nan"), 0.0, 0.0)
+    try:
+        ef.segments_from_points([_nan, _P(1, 0, 0)])
+        raise AssertionError(u"含 NaN 的点序列必须抛 BadInput")
+    except ef.BadInput:
+        pass
+
+    # 重合点：跳过该段而不是整条消失
+    _kept, _dropped = ef.segments_from_points(
+        [_P(0, 0, 0), _P(0, 0, 0), _P(5, 0, 0), _P(10, 0, 0)], min_len=0.1)
+    assert len(_kept) == 2 and len(_dropped) == 1, \
+        u"零长段应被跳过且记账，实得 kept=%d dropped=%d" % (
+            len(_kept), len(_dropped))
+
+    # 闭合：n 个点应产出 n 段
+    _sq, _ = ef.segments_from_points(
+        [_P(0, 0, 0), _P(10, 0, 0), _P(10, 10, 0), _P(0, 10, 0)], closed=True)
+    assert len(_sq) == 4, u"闭合四点应产出 4 段，实得 %d" % len(_sq)
+
+    # 整条过短：抛，不产出半条垃圾墙
+    try:
+        ef.segments_from_points([_P(0, 0, 0), _P(0.001, 0, 0)], total_min=1.0)
+        raise AssertionError(u"总长低于下限应抛 BadInput")
+    except ef.BadInput:
+        pass
+
+    # create_walls：某段失败不影响其他段，且失败原因逐段可追
+    class _FakeWall(object):
+        pass
+
+    class _FakeLine(object):
+        def __init__(self, a, b):
+            self.a, self.b = a, b
+
+        @staticmethod
+        def CreateBound(a, b):
+            return _FakeLine(a, b)
+
+    class _FakeWallApi(object):
+        @staticmethod
+        def Create(doc, curve, wt, lvl, h, off, flip, struct):
+            if curve.a.c[0] == 9 or curve.b.c[0] == 9:
+                raise RuntimeError(u"模拟该段建墙失败")
+            return _FakeWall()
+
+    class _FakeWallUtils(object):
+        calls = []
+
+        @staticmethod
+        def DisallowWallJoinAtEnd(w, end):
+            _FakeWallUtils.calls.append(end)
+
+    class _FakeAPI(object):
+        Line = _FakeLine
+        Wall = _FakeWallApi
+        WallUtils = _FakeWallUtils
+
+    _p = [_P(0, 0, 0), _P(5, 0, 0), _P(9, 0, 0), _P(12, 0, 0)]
+    _segs = [(_p[0], _p[1]), (_p[1], _p[2]), (_p[2], _p[3])]
+    _made, _fail = ef.create_walls(object(), _segs, 1, 2, 10.0, api=_FakeAPI)
+    # x=9 那个顶点被第 2、3 段共用，所以两段都失败、只有第 1 段建成 ——
+    # 这正是"逐段容错"要的语义：坏点只污染与它相邻的段，不吃掉整条。
+    assert [i for i, _r in _fail] == [1, 2], \
+        u"失败段号应为 [1, 2]，实得 %r" % (_fail,)
+    assert len(_made) == 1, u"3 段里应建成 1 段，实得 %d" % len(_made)
+    assert len(_made) + len(_fail) == len(_segs), \
+        u"成功数 + 失败数必须等于请求段数，否则就是静默丢件"
+
+    # 接合抑制开关要真的生效（翻模侧靠它躲开墙重叠风暴）
+    _FakeWallUtils.calls = []
+    ef.create_walls(object(), [(_p[0], _p[1])], 1, 2, 10.0,
+                    suppress_join=True, api=_FakeAPI)
+    assert _FakeWallUtils.calls == [0, 1], \
+        u"suppress_join=True 应两端各调一次，实得 %r" % (_FakeWallUtils.calls,)
+    _FakeWallUtils.calls = []
+    ef.create_walls(object(), [(_p[0], _p[1])], 1, 2, 10.0, api=_FakeAPI)
+    assert _FakeWallUtils.calls == [], u"默认不应关接合"
+
+    # 绕过 segments_from_points 直接拼的坏段，也要在 Create 之前被挡住
+    _bad = [(_P(0, 0, 0), _P(float("nan"), 0, 0))]
+    _made2, _fail2 = ef.create_walls(object(), _bad, 1, 2, 10.0, api=_FakeAPI)
+    assert _made2 == [] and len(_fail2) == 1, \
+        u"NaN 端点必须被拒且不调用 Create：%r %r" % (_made2, _fail2)
+
+    # 非法墙高：0 高墙与 NaN 高都要挡在门口
+    for _bad_h in (0, -1, float("nan")):
+        try:
+            ef.create_walls(object(), _segs, 1, 2, _bad_h, api=_FakeAPI)
+            raise AssertionError(u"墙高 %r 应被拒绝" % _bad_h)
+        except ef.BadInput:
+            pass
+
+    # 空输入不许"静默成功"
+    try:
+        ef.create_walls(object(), [], 1, 2, 10.0, api=_FakeAPI)
+        raise AssertionError(u"segments 为空应抛 BadInput，而不是返回 0 成功")
+    except ef.BadInput:
+        pass
+    sys.stderr.write("PASS  logic: element_factory 守卫（NaN/退化/零高/空输入）\n")
+
+    # ---- 翻模建墙：直接打 _create_wall，证明工厂接管后行为没变 ----
+    # 为什么必须单独测：DWG翻模 的写入闸门测试把 bimconvert.create_elements
+    # 整个换成了 spy（只记参数、返回假结果），所以"墙到底建没建出来"这条
+    # 主链路此前从未被任何测试执行过。
+    import bimconv_elements as _be
+    from pyrevit import DB as _mdb
+
+    def _wall_plan(pts, closed=False, height=None):
+        geom = {"type": "polyline", "points": pts, "closed": closed}
+        return {"type": u"wall", "geom": geom, "height": height,
+                "level": u"标高 1", "thickness_mm": 240}
+
+    class _FakeWT(object):
+        Id = 1
+
+    _col, _crv = [], []
+    _w1 = _be._create_wall(object(), _wall_plan([[0, 0, 0], [6000, 0, 0]]),
+                           1, _FakeWT(), collect=_col, curves=_crv)
+    assert _w1 is not None and len(_col) == 1, \
+        u"两点直墙应建出 1 段并进 collect，实得 collect=%d" % len(_col)
+    assert len(_crv) == 1, u"curves 应与墙一一对应（门窗寄宿要用）"
+
+    _col2 = []
+    _be._create_wall(object(), _wall_plan(
+        [[0, 0, 0], [5000, 0, 0], [5000, 5000, 0], [0, 5000, 0]],
+        closed=True, height=3000), 1, _FakeWT(), collect=_col2)
+    assert len(_col2) == 4, \
+        u"闭合四点应建 4 段墙，实得 %d —— 少建就是静默丢构件" % len(_col2)
+
+    # 重合点：只丢那一段，其余照建
+    _col3 = []
+    _be._create_wall(object(), _wall_plan(
+        [[0, 0, 0], [0, 0, 0], [4000, 0, 0]]), 1, _FakeWT(), collect=_col3)
+    assert len(_col3) == 1, \
+        u"重合点应只吃掉那一段，实得 %d 段" % len(_col3)
+
+    # 全退化：必须抛（上层记"跳过"），不能返回 None 让调用方以为建好了
+    try:
+        _be._create_wall(object(), _wall_plan([[0, 0, 0], [0, 0, 0]]),
+                         1, _FakeWT())
+        raise AssertionError(u"两点重合应抛异常记为跳过，而不是静默返回")
+    except AssertionError:
+        raise
+    except Exception:
+        pass
+
+    # NaN 坐标：必须在进 Wall.Create 之前就被挡掉（native crash 防线）
+    try:
+        _be._create_wall(object(), _wall_plan(
+            [[float("nan"), 0, 0], [5000, 0, 0]]), 1, _FakeWT())
+        raise AssertionError(u"NaN 坐标必须被拒绝")
+    except AssertionError:
+        raise
+    except Exception:
+        pass
+    sys.stderr.write("PASS  logic: 翻模 _create_wall 经工厂后行为不变"
+                     "（直墙/闭合/重合点/全退化/NaN）\n")
+
+
+    # ---- 门窗开洞默认值：大规模计划不得再自动关掉开洞 ----
+    # 为什么必须测：DWG翻模 的写入闸门把 create_elements 整个换成 spy，
+    # 所以 create_elements 内部"门窗到底走哪条分支"此前从未被任何测试执行。
+    # 旧默认是 `door_window_cut = len(planned) <= 200`——真图计划普遍上万，
+    # 等于任何真图都拿不到洞口，而按钮标签写着"含门/窗开洞"。
+    # 两条分支的结果文案不同，正好可以据此判定默认值：
+    #   cut=True  且没有墙可寄宿 -> 失败「模型中无墙可寄宿」
+    #   cut=False                -> 自由放置，会被记成「成功」
+    import bimconv_build as _bb
+
+    def _win_plan(i):
+        return {"element_type": "window", "reliability": "experimental",
+                "level": u"标高 1", "height": 1500.0, "type_hint": u"",
+                "source": u"insert#W%d" % i, "note": u"",
+                "geom": {"type": "insert", "layer": u"WINDOW",
+                         "handle": u"W%d" % i, "block": u"WIN",
+                         "point": [i * 1000.0, 0.0, 0.0]}}
+
+    _big = [_win_plan(i) for i in range(300)]      # 300 > 旧阈值 200
+    _res = _bb.create_elements(object(), _big, out=None,
+                               door_window_cut=None, safe_mode=False)
+    _msgs = [r[1] for r in _res]
+    _hostel = sum(1 for m in _msgs if u"无墙可寄宿" in str(m))
+    assert _hostel == len(_big), (
+        u"300 个窗（>旧阈值200）应全部尝试寄宿开洞并因无墙而明确失败，"
+        u"实得 %d/%d；其余消息样例=%s" % (_hostel, len(_big), _msgs[:2]))
+    # 反向：显式 cut=False 时必须走自由放置（记成功），证明上面那条不是假通过
+    _res2 = _bb.create_elements(object(), [_win_plan(i) for i in range(5)],
+                                out=None, door_window_cut=False, safe_mode=False)
+    assert not any(u"无墙可寄宿" in str(r[1]) for r in _res2), \
+        u"cut=False 应走自由放置分支，不该报『无墙可寄宿』"
+    sys.stderr.write("PASS  logic: 门窗开洞不再按规模一刀切关闭"
+                     "（300 个窗全部尝试寄宿；cut=False 时确实走自由放置）\n")
+
     from bimlib import write_csv_unicode, read_csv_unicode
     tf = os.path.join(tempfile.gettempdir(), "bimtoolkit_test.csv")
     write_csv_unicode(tf, [u"名称", u"值"], [[u"墙", 1], [u"楼板", u"二"]])
     rows = read_csv_unicode(tf)
     assert rows and rows[0].get(u"名称") == u"墙", rows
     sys.stderr.write("PASS  logic: csv round-trip (utf-8 BOM)\n")
+
+    # ---- 收集器口径：实例 ≠ 族类型 ----
+    # 极性以 2026-10-07 真机测量为准：ElementIsElementTypeFilter 的参数是 invert，
+    # True = 只放行实例（等价 WhereElementIsNotElementType()），False = 只放行族类型。
+    # 这组断言同时校验 mock 与 bimlib 两侧：任何一侧把极性写反都会红。
+    from pyrevit import DB as _db
+    fec = _db.FilteredElementCollector
+    inst = [e for e in fec(None).WherePasses(
+        _db.ElementIsElementTypeFilter(True)).ToElements()]
+    typ = [e for e in fec(None).WherePasses(
+        _db.ElementIsElementTypeFilter(False)).ToElements()]
+    assert inst and not any(getattr(e, "is_type", False) for e in inst), \
+        u"mock 极性写反：Filter(True) 应当只给实例"
+    assert typ and all(getattr(e, "is_type", False) for e in typ), \
+        u"mock 极性写反：Filter(False) 应当只给族类型"
+    assert len(inst) == len(fec(None).WhereElementIsNotElementType().ToElements()), \
+        u"mock 失真：Filter(True) 应与 WhereElementIsNotElementType() 同结果"
+    assert len(typ) == len(fec(None).WhereElementIsElementType().ToElements()), \
+        u"mock 失真：Filter(False) 应与 WhereElementIsElementType() 同结果"
+
+    from bimlib import all_model_elements
+    got = all_model_elements(None).ToElements()
+    assert got, u"mock 失效：all_model_elements 返回空"
+    n_type = len([e for e in got if getattr(e, "is_type", False)])
+    assert n_type == 0, (
+        u"统计口径反了：all_model_elements 拿到的 %d 个元素里有 %d 个是族类型。"
+        u"ElementIsElementTypeFilter 的参数是 invert，统计构件要传 True。"
+        % (len(got), n_type))
+
+    # Level 是实例：Filter(True) 应给全部楼层，Filter(False) 应给空
+    lv_inst = fec(None).OfClass(_db.Level).WherePasses(
+        _db.ElementIsElementTypeFilter(True)).ToElements()
+    lv_typ = fec(None).OfClass(_db.Level).WherePasses(
+        _db.ElementIsElementTypeFilter(False)).ToElements()
+    assert len(lv_inst) == 3 and lv_typ == [], \
+        u"mock 失真：Level 是实例，Filter(True) 应得 3 层、Filter(False) 应得 0"
+    sys.stderr.write("PASS  logic: 收集器口径（极性按真机测量：True=实例）\n")
 
     # ---- AI 指令 的执行前静态护栏（S13）----
     from ai_code_guard import scan, blockers, warnings
@@ -709,6 +1027,39 @@ def main(argv=None):
 
     # ---- 批量改参 写入闸门（此前是测试死区）----
     _test_batch_params_gate(tmp)
+
+    # ---- 柱族类型选择器 ----
+    # 真机实测 1733 根柱被静默统一成 UC305x305x97：旧路径
+    # `col_syms if col_syms else all_syms` + `pool[0]`，既可能拿门当柱，
+    # 结果又取决于收集器顺序。这条断言把三件事钉住。
+    import bimconv_elements as _bce
+
+    class _Sym(object):
+        def __init__(self, n):
+            self.Name = n
+
+    _steel = _Sym(u"UC305x305x97")
+    _steel2 = _Sym(u"UC406x140x39")
+    _conc = _Sym(u"混凝土-矩形 400x400")
+    _conc2 = _Sym(u"混凝土-圆形 800")
+    # 契约：pool 已由 _column_pool / col_syms 按类别筛过，这里传的都是柱族。
+    # 1) 有混凝土柱时只能落在混凝土集合内。不断言"哪一根"——按名排序选圆形
+    #    还是矩形不是要紧的性质，要紧的是可复现。
+    _got = _bce.pick_column_symbol([_steel, _conc, _conc2], u"")
+    assert u"混凝土" in _got.Name, "应只在混凝土柱里挑，实得 %s" % _got.Name
+    assert _bce.pick_column_symbol([_conc2, _steel, _conc], u"").Name == _got.Name, \
+        "打乱入参顺序必须得到同一个类型"
+    # 2) 没有混凝土柱时也要确定（旧实现返回 pool[0]，等于收集器顺序）
+    assert _bce.pick_column_symbol([_steel2, _steel], u"").Name == _steel.Name, \
+        "无混凝土柱时应按名排序取首枚"
+    assert _bce.pick_column_symbol([_steel, _steel2], u"").Name == _steel.Name
+    # 3) 空池必须返回 None（让调用方明确失败），不能兜底成别的族
+    assert _bce.pick_column_symbol([], u"") is None, "空池必须返回 None"
+    assert _bce.pick_column_symbol(None, u"") is None, "None 池必须返回 None"
+    # 4) hint 命中优先于"偏好混凝土"
+    assert _bce.pick_column_symbol([_conc, _steel], u"uc305") is _steel, \
+        "type_hint 应优先于默认偏好"
+    sys.stderr.write("PASS  logic: pick_column_symbol 不再乱兜底且可复现\n")
 
     shutil.rmtree(tmp, ignore_errors=True)
 

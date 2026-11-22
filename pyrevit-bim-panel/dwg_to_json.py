@@ -2,16 +2,16 @@
 """
 dwg_to_json.py —— 把 DWG/DXF 读成中性 model_plan.json（翻模第一步）。
 
-运行环境：装了 ezdxf + pywin32 的 CPython，**不是** Revit 内。
-  python dwg_to_json.py <图纸.dwg|dxf> [--out model_plan.json]
-  python dwg_to_json.py --selftest
+运行环境：本机 bim-dev venv（有 ezdxf + pywin32），**不是** Revit 内。
+  E:/AI-pyenvs/bim-dev/Scripts/python.exe dwg_to_json.py <图纸.dwg|dxf> [--out model_plan.json]
+  E:/AI-pyenvs/bim-dev/Scripts/python.exe dwg_to_json.py --selftest
 
 关于 DWG 读取（重要）：
   ezdxf 只能读 DXF（文本），**读不了二进制 DWG**（R2000+ 都是二进制）。
   真实图纸多为 AC1032(R2018+) 等二进制 DWG，AutoCAD 2010 也打不开新格式。
   所以本脚本对二进制 DWG 自动走"转 DXF 再读"的后端（按优先级回退）：
-    1) ODA File Converter（命令行，免费、无需激活；推荐。默认在 Program Files
-       下找，也可用环境变量 BIMTOOLKIT_ODA 直接指到 exe）
+    1) ODA File Converter（命令行，免费、无需激活；推荐，已落地到
+       E:/bim-toolkit/_tools/ODA/app/ODAFileConverter.exe）
     2) AutoCAD COM（仅能开到自身版本，老 DWG 才有用；AC1032 打不开）
     3) ZWCAD COM（中望 CAD；用户已说明无激活码、非长久之计，仅作兜底）
   都没装上时给出明确指引：先用任意 CAD / ODA File Converter 把图纸另存为
@@ -125,7 +125,7 @@ def _oda_convert(dwg_path, dxf_path):
     """用 ODA File Converter 命令行批量转换。免费、无需激活，推荐后端。"""
     exe = None
     for cand in (
-        os.environ.get("BIMTOOLKIT_ODA", u""),
+        r"E:/bim-toolkit/_tools/ODA/app/ODAFileConverter.exe",
         r"C:\Program Files\ODAFileConverter\ODAFileConverter.exe",
         r"C:\Program Files (x86)\ODAFileConverter\ODAFileConverter.exe",
     ):
@@ -135,7 +135,7 @@ def _oda_convert(dwg_path, dxf_path):
     if exe is None:
         import glob as _g
         for pat in (r"C:\Program Files\ODAFileConverter*\ODAFileConverter.exe",
-                    os.path.expanduser(u"~/AppData/Local/Programs/ODAFileConverter*/ODAFileConverter.exe")):
+                    r"E:/bim-toolkit/_tools/ODA*/app/ODAFileConverter.exe"):
             hits = _g.glob(pat)
             if hits:
                 exe = hits[0]
@@ -144,8 +144,7 @@ def _oda_convert(dwg_path, dxf_path):
         import shutil as _s
         exe = _s.which("ODAFileConverter.exe") or _s.which("ODAFileConverter")
     if exe is None:
-        raise RuntimeError("未找到 ODA FileConverter.exe（请先安装 ODA File Converter，"
-                             u"或把环境变量 BIMTOOLKIT_ODA 指到它的 exe）")
+        raise RuntimeError("未找到 ODA FileConverter.exe（请先安装 ODA File Converter，或确认 E:/bim-toolkit/_tools/ODA/app/ODAFileConverter.exe 存在）")
     indir = os.path.dirname(os.path.abspath(dwg_path))
     outdir = tempfile.gettempdir()
     # ODAFileConverter <in> <out> <版本> <DXF/DWG> <递归0/1>

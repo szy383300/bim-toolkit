@@ -88,15 +88,45 @@ REM       needs but which does not exist in the source tree --
 REM       bridge.token / mcp_audit.jsonl / mcp_crash.log / logs_archive.
 REM       /MIR already removes stale files, so the rmdir was redundant.
 REM ---------------------------------------------------------------------
+
+REM 2026-10-07: the payload lives in bimtoolkit-release\BIMToolkit.extension,
+REM which is gitignored and only produced by tools\build_release.py. Without a
+REM hard existence gate the robocopy below copied from a missing directory,
+REM its errors went to nul, and the old success check looked at the DESTINATION
+REM -- so on any machine that had installed once it printed success while
+REM landing nothing. Fail loudly instead.
+if not exist "%EXT_SRC%\extension.json" (
+    echo   x 发布 payload 缺失: %EXT_SRC%
+    echo     这份目录不入库，需先在仓库根执行:
+    echo         python tools\build_release.py
+    echo     再重跑本安装器。
+    set /a FAIL+=1
+    goto :skip_ext_deploy
+)
+
 robocopy "%EXT_SRC%" "%EXT_DEST%" /MIR /XD __pycache__ logs_archive /XF bridge.token mcp_audit.jsonl mcp_bridge.log mcp_crash.log *.bak-* *.bak_* /NFL /NDL /NJH /NJS /nc /ns /np >nul 2>&1
 
-if exist "%EXT_DEST%\extension.json" (
-    echo   √ 扩展已部署到: %EXT_DEST%
+REM 判据 = 源与目标真的等量，而不是"目标目录里有个 extension.json"。
+REM 比对 script.py 数量能直接抓出"少装了一个按钮"这类漂移（此前 release
+REM 副本就悄悄少了整个 配置建模 按钮和 6 个 lib 模块）。
+set "SRC_N="
+set "DST_N="
+for /f %%s in ('dir /s /b "%EXT_SRC%\script.py" 2^>nul ^| find /c /v ""') do set "SRC_N=%%s"
+for /f %%d in ('dir /s /b "%EXT_DEST%\script.py" 2^>nul ^| find /c /v ""') do set "DST_N=%%d"
+
+if not exist "%EXT_DEST%\extension.json" (
+    echo   x 扩展部署失败: %EXT_DEST% 里没有 extension.json
+    set /a FAIL+=1
+) else if "%SRC_N%"=="%DST_N%" (
+    echo   √ 扩展已部署到: %EXT_DEST% （按钮脚本 %DST_N% 个，与源一致）
     set /a PASS+=1
 ) else (
-    echo   × 扩展部署失败
+    echo   x 落地文件数与源不一致: 源 %SRC_N% / 目标 %DST_N%
+    echo     不要使用这个扩展，请重跑 build_release.py 后再装。
     set /a FAIL+=1
 )
+
+:skip_ext_deploy
 
 :: =========================================================================
 :: 3. 部署 revit-mcp 网关 + 确保 CPython3
@@ -105,15 +135,19 @@ echo.
 echo [3/5] 部署 revit-mcp 网关 + 检查 Python3 ...
 
 if not exist "%GW_DIR%" mkdir "%GW_DIR%" 2>nul
-copy /y "%SCRIPT_DIR%revit-mcp\revit_mcp_gateway.py" "%GW_DIR%\" >nul 2>&1
-copy /y "%SCRIPT_DIR%revit-mcp\README.md" "%GW_DIR%\" >nul 2>&1
-
-if exist "%GW_DIR%\revit_mcp_gateway.py" (
-    echo   √ 网关已部署到: %GW_DIR%
-    set /a PASS+=1
-) else (
-    echo   × 网关部署失败
+if not exist "%SCRIPT_DIR%revit-mcp\revit_mcp_gateway.py" (
+    echo   x 网关源缺失: %SCRIPT_DIR%revit-mcp —— 同样需要先跑 build_release.py
     set /a FAIL+=1
+) else (
+    copy /y "%SCRIPT_DIR%revit-mcp\revit_mcp_gateway.py" "%GW_DIR%\" >nul 2>&1
+    copy /y "%SCRIPT_DIR%revit-mcp\README.md" "%GW_DIR%\" >nul 2>&1
+    if exist "%GW_DIR%\revit_mcp_gateway.py" (
+        echo   √ 网关已部署到: %GW_DIR%
+        set /a PASS+=1
+    ) else (
+        echo   × 网关部署失败
+        set /a FAIL+=1
+    )
 )
 
 :: 找一个可用的 CPython3：PATH -> py launcher -> 下载嵌入式包

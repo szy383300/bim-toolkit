@@ -24,10 +24,16 @@ ok, fail, warn = "PASS", "FAIL", "WARN"
 def line(t):
     print(t)
 
+# 此前全文只 print、从不设退出码：无论 AutoCAD COM / RevitAPI.dll 在不在，
+# 脚本都 exit 0 —— 而 README 拿它当"6 项全部 PASS"的证据，属于典型假绿灯。
+_FAILED = []
+_PASSED = []
+
 
 def check(name, cond, detail=""):
     tag = ok if cond else fail
     print(f"[{tag}] {name}" + (f"  -> {detail}" if detail else ""))
+    (_PASSED if cond else _FAILED).append(name)
     return cond
 
 
@@ -146,3 +152,11 @@ print(f"Revit API   : {'程序集就绪（需 pyRevit/加载项在 Revit 内调�
 print(f"下一步建议  : AutoCAD 自动化现在就能练；Revit 二开请先装 pyRevit，")
 print(f"              再在《规划》阶段 3 用 pyRevit 写第一个 Revit 面板。")
 print(SEP)
+
+# 退出码即结论：CI / 安装器 / 文档引用它时，0 才代表"这些项真的过了"。
+if _FAILED:
+    print(f"[FAIL] {len(_FAILED)}/{len(_FAILED) + len(_PASSED)} 项未通过："
+          + "、".join(_FAILED))
+    sys.exit(1)
+print(f"[PASS] {len(_PASSED)} 项全部通过")
+sys.exit(0)

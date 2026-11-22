@@ -233,6 +233,132 @@ def check_dwgconvert(strict=False):
         ok = False
         details.append("    [FAIL] plan_from_json 往返: %s" % e)
 
+    # (b2) v2.14 图框路由：框内图名定层 / 非平面框排除 / 多图名框拒绝 /
+    #      框外图名就近回退 / 旧 JSON（无 frames）零回归
+    try:
+        sys.path.insert(0, LIB)
+        from bimconv_rules import route_plans_by_frames
+
+        def _wall(h, x0, y0, x1, y1):
+            return {"element_type": "wall", "reliability": "mature",
+                    "level": "1F", "level_basis": u"兜底取首个楼层",
+                    "height": 3000, "type_hint": "", "source": "w%s" % h,
+                    "geom": {"type": "line", "start": [x0, y0],
+                             "end": [x1, y1], "layer": "WALL"}, "note": ""}
+
+        # 三个框：三层平面（可建）/ 南立面（排除）/ 两个平面图名（拒绝）
+        FR = [1000.0, 1000.0, 85000.0, 60000.0]      # 框A x1~8.5万
+        FR_B = [200000.0, 1000.0, 284000.0, 60000.0]  # 框B（立面）
+        FR_C = [400000.0, 1000.0, 484000.0, 60000.0]  # 框C（两平面图名）
+        frames = [{"rect": FR, "layer": "PUB_TITLE"},
+                  {"rect": FR_B, "layer": "PUB_TITLE"},
+                  {"rect": FR_C, "layer": "PUB_TITLE"}]
+        texts = [
+            {"text": u"三层平面图 1:100", "x": 70000.0, "y": 3000.0},
+            {"text": u"南立面图 1:100", "x": 270000.0, "y": 3000.0},
+            {"text": u"六层平面图", "x": 470000.0, "y": 3000.0},
+            {"text": u"七层平面图", "x": 420000.0, "y": 58000.0},
+            # 框外游离图名（就近回退用，距框A外墙 10m 内的图元可救）
+            {"text": u"五层平面图", "x": 100000.0, "y": 30000.0},
+        ]
+        LEVELS = [u"1层", u"3层", u"5层", u"6层", u"7层"]
+        def _mk_plans():
+            # 每个断言都要新鲜副本：route_plans_by_frames 会原地覆盖
+            # level/level_basis，复用同一 list 会读到上一轮的污染状态
+            return [
+                _wall(1, 10000, 10000, 50000, 10000),     # 框A 内 → 3层
+                _wall(2, 210000, 10000, 250000, 10000),   # 框B 内 → 排除
+                _wall(3, 410000, 10000, 450000, 10000),   # 框C 内 → 拒绝
+                _wall(4, 90000, 30000, 95000, 30000),     # 框外、距五层图名 ≈8.6m → 就近
+                _wall(5, 500000, 5000, 560000, 5000),     # 框外、无就近图名 → 拒绝
+            ]
+
+        out, drop, st = route_plans_by_frames(
+            _mk_plans(), [], frames, texts, LEVELS)
+        assert st["plan_frames"] == 1 and st["exclude_frames"] == 1 \
+            and st["reject_frames"] == 1, "frame stats=%s" % st
+        assert len(out) == 2, "routed+near=%s (out=%s)" % (len(out), out)
+        lv = sorted(p["level"] for p in out)
+        assert lv == [u"3层", u"5层"], "levels=%s" % lv
+        assert u"图框图名" in out[0]["level_basis"], out[0]["level_basis"]
+        assert u"就近" in out[1]["level_basis"], out[1]["level_basis"]
+        kinds = sorted(d["type"] for d in drop)
+        assert u"不建·立面" in kinds and u"拒建·层号不可辨" in kinds \
+            and u"拒建·框外且无就近图名" in kinds, "drop kinds=%s" % kinds
+        # 零回归：单图名（单平面文件）无框时原样返回（就近只覆盖兜底、
+        # 够不着的保留）；多图名文件无框时够不着的按「宁缺勿叠」拒绝
+        one_title_texts = [texts[0]]
+        out2, drop2, st2 = route_plans_by_frames(
+            _mk_plans(), [], [], one_title_texts, LEVELS)
+        assert len(out2) == 5 and not drop2 and \
+            st2["frames_total"] == 0, "no-frame regression: %s" % st2
+        assert all(u"兜底" in (p.get("level_basis") or u"")
+                   for p in out2), "single-title keep/fallback"
+        out3, drop3, st3 = route_plans_by_frames(
+            _mk_plans(), [], [], texts, LEVELS)
+        assert st3["near_fallback"] >= 1 and st3["rejected"] >= 1, \
+            "multi-title reject: %s" % st3
+        assert len(out3) + st3["rejected"] == 5, \
+            "multi-title accounting: %s" % st3
+        details.append(
+            "    [PASS] 图框路由：plan/exclude/reject/就近/框外 五态"
+            " + 无框(单图名零回归/多图名宁缺勿叠)（stats=%s）" % st)
+    except Exception as e:
+        ok = False
+        details.append("    [FAIL] 图框路由: %s" % e)
+
+    # (b3) v2.15 图层映射会话 + 楼层表预检（纯函数）
+    try:
+        sys.path.insert(0, LIB)
+        from bimconv_rules import (unmatched_layer_stats, rules_from_layer_map,
+                                   title_floor_numbers, missing_levels_report,
+                                   layer_hint)
+        ents = [
+            {"type": "line", "layer": "LAYER1", "handle": "1",
+             "start": [0, 0], "end": [6000, 0]},
+            {"type": "line", "layer": "LAYER1", "handle": "2",
+             "start": [0, 0], "end": [7000, 0]},
+            {"type": "insert", "layer": "GROUND", "handle": "3",
+             "block": "XX", "point": [1, 1]},
+            {"type": "line", "layer": "WALL", "handle": "4",
+             "start": [0, 0], "end": [8000, 0]},
+        ]
+        rows, n_small, e_small = unmatched_layer_stats(
+            ents, [{"match_type": "layer", "pattern": "*WALL*",
+                    "element_type": "wall", "level": "*", "height": 0,
+                    "type_hint": "", "note": ""}], min_count=1, top=10)
+        got = {(r[0], r[1]): r[2] for r in rows}
+        assert got.get(("LAYER1", "line")) == 2, "stats=%s" % got
+        assert ("GROUND", "insert") in got, "stats=%s" % got
+        assert ("WALL", "line") not in got, "已命中的层不应进未识别桶"
+        assert n_small == 0 and e_small == 0
+        rl = rules_from_layer_map({u"LAYER1": u"wall", u"": u"wall"})
+        assert len(rl) == 1 and rl[0]["pattern"] == u"LAYER1" \
+            and rl[0]["element_type"] == u"wall" and rl[0]["height"] == 0.0, \
+            "rules=%s" % rl
+        assert layer_hint(u"GROUND_LINE") == u"墙", "hint 应命中 ground"
+        assert layer_hint(u"LAYER7") is None, "无语义层不该瞎建议"
+        texts = [
+            {"text": u"六、八及十~十七层平面 1:100", "x": 0, "y": 0},
+            {"text": u"三层平面图 1:100", "x": 1, "y": 1},
+            {"text": u"地下一层平面图", "x": 2, "y": 2},
+            {"text": u"南立面图 1:100", "x": 3, "y": 3},   # 非平面，不进
+        ]
+        nums = title_floor_numbers(texts)
+        for n in (3, 10, 11, 12, 13, 14, 15, 16, 17):
+            assert n in nums, "floor nums missing %d: %s" % (n, nums)
+        # 「六、八及十~十七层」：离散项「六、八」后不直接跟「层」被漏掉、
+        # 只解析出范围「十~十七」——对预检（提示缺层）漏报比误报安全
+        assert -1 in nums and 6 not in nums and 7 not in nums, "nums=%s" % nums
+        miss, samples = missing_levels_report(
+            texts, [u"1层", u"2层", u"3层", u"10层"])
+        want_miss = sorted(set([11, 12, 13, 14, 15, 16, 17, -1]))
+        assert miss == want_miss, "miss=%s want=%s" % (miss, want_miss)
+        details.append("    [PASS] 图层映射统计/规则生成/启发式/楼层预检 纯函数")
+    except Exception as e:
+        ok = False
+        details.append("    [FAIL] 图层映射/楼层预检: %s" % e)
+
     # (c) consolidate_walls：零散墙段链成连续墙线（纯 python，不需要 Revit）
     try:
         mkwall = lambda s, e: {
@@ -294,6 +420,53 @@ def check_dwgconvert(strict=False):
     except Exception as e:
         ok = False
         details.append("    [FAIL] STAIR 规则: %s" % e)
+
+    # (e) 子图聚类：一张 DWG 里并排画几张图，必须能数出来（真机 30 簇 → 1 层 = 墙重叠）
+    try:
+        from bimconvert import subdrawing_clusters, subdrawing_summary
+
+        def _wl(x1, y1, x2, y2):
+            return {"element_type": "wall",
+                    "geom": {"type": "line", "start": [x1, y1, 0], "end": [x2, y2, 0]}}
+
+        plans = []
+        # A、B 两簇各 120 条，相距 200 m；C 簇只有 3 条 = 噪声
+        for i in range(120):
+            plans.append(_wl(i * 80, 0, i * 80, 9000))
+            plans.append(_wl(200000 + i * 80, 0, 200000 + i * 80, 9000))
+        plans = plans[:240]
+        for i in range(3):
+            plans.append(_wl(500000 + i * 80, 0, 500000 + i * 80, 9000))
+        cl = subdrawing_clusters(plans)
+        assert len(cl) == 3, "簇数=%s（应为 3）" % len(cl)
+        n_big, n_in, n_all = subdrawing_summary(plans)
+        assert (n_big, n_in, n_all) == (2, 240, 243), \
+            "summary=%s（应为 (2, 240, 243)：噪声簇不计数）" % ((n_big, n_in, n_all),)
+        # 每个下标只能属于一簇，且不能丢图元
+        allix = sorted(i for c in cl for i in c)
+        assert allix == list(range(len(plans))), "聚类丢/重了下标"
+        details.append("    [PASS] subdrawing_clusters：3 簇分出，噪声簇不进 summary")
+    except Exception as e:
+        ok = False
+        details.append("    [FAIL] subdrawing_clusters: %s" % e)
+
+    # (f) 「按模式跳过」与「真失败」必须分得开，且与抛出侧共用同一个常量
+    try:
+        import bimconv_build
+        from bimconvert import is_by_design_skip
+        assert is_by_design_skip(bimconv_build.SAFE_SKIP_TAG + u"：window")
+        assert not is_by_design_skip(u"项目中没有门族（FamilySymbol），已跳过")
+        assert not is_by_design_skip(u"找不到目标楼层「三层」，已跳过")
+        assert not is_by_design_skip(None)
+        assert not is_by_design_skip(u"")
+        # 防漂移：抛出侧若改回裸中文，分类器就会瞎掉，这里直接读源码钉住
+        _src = open(os.path.join(EXT, "lib", "bimconv_build.py"), "rb").read()
+        assert b"raise Exception(SAFE_SKIP_TAG" in _src, \
+            "安全模式跳过没有走 SAFE_SKIP_TAG 常量，报表分类会失配"
+        details.append("    [PASS] is_by_design_skip：跳过/失败分箱，且抛出侧用同一常量")
+    except Exception as e:
+        ok = False
+        details.append("    [FAIL] is_by_design_skip: %s" % e)
     return ok, details
 
 

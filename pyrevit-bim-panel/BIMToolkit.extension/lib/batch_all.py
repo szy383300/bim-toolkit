@@ -87,8 +87,8 @@ def process_one(doc, model_path):
                       cat_headers, cat_rows)
 
     # ---------- ② 楼层清点 ----------
-    lv_coll = (DB.FilteredElementCollector(doc).OfClass(DB.Level)
-               .WherePasses(DB.ElementIsElementTypeFilter(True)))
+    # Level 本身就是实例，不叠类型过滤器（False 会把实例全滤掉）
+    lv_coll = DB.FilteredElementCollector(doc).OfClass(DB.Level)
     levels2 = to_element_list(lv_coll)
     levels2.sort(key=lambda l: l.Elevation)
     lv_rows = []

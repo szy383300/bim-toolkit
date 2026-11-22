@@ -9,7 +9,8 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "lib"))
 
 from pyrevit import revit, DB, script
-from bimlib import all_model_elements, html_table, to_element_list
+from bimlib import (all_model_elements, html_table, to_element_list,
+                    stats_calibration_note)
 
 doc = revit.doc
 output = script.get_output()
@@ -18,9 +19,9 @@ output = script.get_output()
 def main():
     output.print_md(u"## 楼层构件清点")
 
+    # Level 本身就是实例，这里不叠类型过滤器（叠 True 等价、叠 False 会把它们全滤掉）
     levels = to_element_list(
-        DB.FilteredElementCollector(doc).OfClass(DB.Level)
-        .WherePasses(DB.ElementIsElementTypeFilter(True)))
+        DB.FilteredElementCollector(doc).OfClass(DB.Level))
     levels.sort(key=lambda l: l.Elevation)
 
     rows = []
@@ -37,7 +38,14 @@ def main():
     rows.append([u"（无关联楼层）", all_n - lv_total])
     rows.append([u"合计（全部模型构件）", all_n])
 
+    if not levels:
+        output.print_md(u"_当前项目没有楼层（Level）。_"
+                        u"若项目里明明有标高，说明收集器口径出了问题，请勿采信本表。")
+
     output.print_html(html_table([u"楼层", u"构件数"], rows))
+    _cal = stats_calibration_note(doc)
+    if _cal:
+        output.print_md(_cal)
     output.print_md(u"_共 %d 个楼层，%d 个模型构件。_" % (len(levels), all_n))
 
 

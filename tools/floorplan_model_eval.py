@@ -30,7 +30,8 @@ DWG 图层几何（见 `DWG翻模` 按钮）。
     <workbuddy-python> tools/floorplan_model_eval.py --raster 图纸.pdf --out out/
 
 依赖：ultralytics + opencv（+ PyMuPDF 仅 --raster 需要）。
-哪个解释器把依赖装齐了就用哪个，脚本不关心它装在哪。
+需要一个装齐 ultralytics + opencv 的 env（例如用户目录下 `.workbuddy` 的 default env）：
+    %USERPROFILE%\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe
 """
 import argparse
 import json

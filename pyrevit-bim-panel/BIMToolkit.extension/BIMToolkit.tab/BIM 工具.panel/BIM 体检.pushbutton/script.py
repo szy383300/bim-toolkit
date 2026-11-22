@@ -14,7 +14,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "lib"))
 
 from pyrevit import revit, DB, script
-from bimlib import all_model_elements, html_table, to_element_list
+from bimlib import (all_model_elements, html_table, to_element_list,
+                    stats_calibration_note)
 from bimhealth import (scan_warnings, scan_families, scan_parameters,
                        health_score, health_grade)
 
@@ -27,6 +28,9 @@ def main():
 
     # ---- 顶层指标（与一键统计口径一致，便于衔接）----
     els = to_element_list(all_model_elements(doc))
+    _cal = stats_calibration_note(doc)
+    if _cal:
+        output.print_md(_cal)
     levels = to_element_list(DB.FilteredElementCollector(doc).OfClass(DB.Level))
     views = to_element_list(DB.FilteredElementCollector(doc).OfClass(DB.View))
     sheets = to_element_list(DB.FilteredElementCollector(doc).OfClass(DB.ViewSheet))

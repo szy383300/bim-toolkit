@@ -1,0 +1,8 @@
+{
+  "_readme": "MCP Bridge 策略配置模板。复制为同目录 mcp_bridge_config.json 后修改；改完必须回 Revit 重新点一次 MCP Bridge 按钮才生效。",
+  "_policy": "safe=只读 | build=只读+有语义的写 | dev=全开（含 execute_code / delete_elements）。",
+  "_default_why": "模板给的是 build：能建墙/楼板/门窗、能存图，但不放开任意代码执行。需要 dev 的只有 genbuild（配置建模）那类依赖 execute_code 配方的流程，请显式切换而不是把默认值改成 dev —— 这份配置会被部署到别人机器上。",
+  "_allow_execute_code": "旧字段，v7.13.0 起仅在缺少 policy 时用于推导（true->dev, false->build）。",
+  "policy": "build",
+  "allow_execute_code": false
+}

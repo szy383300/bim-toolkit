@@ -54,6 +54,12 @@ bimtoolkit-release/revit-mcp/
 #   （llm_client.load_config() 已支持，且优先级高于文件）
 # ---------------------------------------------------------------------------
 deepseek_config.json
+# MCP Bridge 的策略配置也属于"本机状态"，不入库（2026-10-07）：
+# 此前 HEAD 里那份写死 policy=dev / allow_execute_code=true，任何人 clone
+# 再部署就是出厂开启任意代码执行。去掉该文件后，桥落回代码内置默认
+# （bridge_core.py:230 = build / allow_execute_code=False），这才是安全方向。
+# 本机要 dev 档请复制 mcp_bridge_config.json.example 后自行改。
+**/MCP Bridge.pushbutton/mcp_bridge_config.json
 *.token
 
 # MCP Bridge 运行时状态：只在部署目标目录里由桥生成，仓库中不应出现。
@@ -98,11 +104,4 @@ _survey/
 # 沿用本仓库既有约定：下划线前缀 = 本地工作区（_tools/ _train/ _research/ ...）。
 mcp/_*
 mcp/.workbuddy/
-
-# ===== 大体积模型与 CAD 样例：不入库，保留在原仓库 E:\bim-toolkit =====
-models/
-cad_samples/
-*.rvt
-*.rfa
-*.dxf
-*.dwg
+_QUARANTINE-*

@@ -89,25 +89,42 @@ def show_report(report):
     checks = report["checks"]
     feedback = report["feedback"]
     params = report["model_params"]
+    not_checked = report.get("not_checked") or []
 
     if output:
         output.print_md(u"## 规范审查报告")
         output.print_md(u"")
         output.print_md(u"### 模型概况")
-        output.print_md(u"- 层数: **%d**" % params.get("total_floors", 0))
+        output.print_md(u"- 标高数: **%d**　楼层数: **%d**" % (
+            params.get("n_levels", 0), params.get("total_floors", 0)))
+        if params.get("floor_basis"):
+            output.print_md(u"  _依据：%s_" % params["floor_basis"])
         output.print_md(u"- 建筑高度: **%.1f m**" % (
             params.get("building_height_mm", 0) / 1000.0))
-        output.print_md(u"- 墙厚: **%d mm**" % params.get(
-            "wall_thickness_mm", 0))
-        output.print_md(u"- 估算面积: **%.1f m2**" % params.get(
-            "total_area_sqm", 0))
+        output.print_md(u"- 墙厚（取最厚墙类型）: **%s mm**，涉及 %d 种墙类型" % (
+            params.get("wall_thickness_mm") or u"未取到",
+            params.get("wall_types_seen", 0)))
+        ta = params.get("total_area_sqm")
+        output.print_md(u"- 估算面积: **%s**" % (
+            (u"%.1f m2" % ta) if ta else u"未取到"))
+        if params.get("footprint_basis"):
+            output.print_md(u"  _%s_" % params["footprint_basis"])
+        if params.get("unavailable"):
+            output.print_md(u"")
+            output.print_md(u"**本次没取到的数据（不会计入判定）**")
+            for u_ in params["unavailable"]:
+                output.print_md(u"- %s" % u_)
         output.print_md(u"")
 
-        color = u"#27ae60" if score >= 75 else (
-            u"#f39c12" if score >= 60 else u"#e74c3c")
-        output.print_md(
-            u"### 综合评分: <span style='color:%s'>**%d 分 (%s)**</span>" % (
-                color, score, grade))
+        if score is None:
+            output.print_md(
+                u"### 综合评分: <span style='color:#e74c3c'>**无法评级**</span>")
+        else:
+            color = u"#27ae60" if score >= 75 else (
+                u"#f39c12" if score >= 60 else u"#e74c3c")
+            output.print_md(
+                u"### 综合评分: <span style='color:%s'>**%d 分 (%s)**</span>" % (
+                    color, score, grade))
         output.print_md(u"")
 
         headers = [u"检查项", u"状态", u"说明", u"规范依据", u"建议"]
@@ -118,12 +135,20 @@ def show_report(report):
                 u"fail": u"FAIL",
                 u"warning": u"WARN",
                 u"info": u"INFO",
+                u"not_checked": u"未检查",
             }.get(c["status"], u"?")
             rows.append([
                 c["item"], status_icon, c["message"],
                 c["standard"], c["suggestion"]
             ])
         output.print_html(html_table(headers, rows))
+
+        if not_checked:
+            output.print_md(u"")
+            output.print_md(u"### ⚠️ 有 %d 项没有真正检查" % len(not_checked))
+            output.print_md(
+                u"这些项**没有扣分也没有加分**。把它们当成「通过」会让评分虚高 —— "
+                u"补齐数据或补齐实现之前，本次评分只代表已完成判定的那部分。")
 
         if feedback:
             output.print_md(u"")
@@ -168,15 +193,20 @@ def main():
     try:
         from Autodesk.Revit.UI import TaskDialog, TaskDialogCommonButtons
         dlg = TaskDialog(u"规范审查完成")
-        dlg.MainInstruction = u"审查得分: %d 分 (%s)" % (
-            report["score"], report["grade"])
+        if report["score"] is None:
+            dlg.MainInstruction = u"无法评级：%s" % report["grade"]
+        else:
+            dlg.MainInstruction = u"审查得分: %d 分 (%s)" % (
+                report["score"], report["grade"])
+        _nc = len(report.get("not_checked") or [])
         dlg.MainContent = (
-            u"检查项: %d | 不合格: %d | 警告: %d\n"
+            u"完成判定: %d | 不合格: %d | 警告: %d | 未检查: %d\n"
             u"%s\n\n"
             u"详细报告已在 pyRevit 控制台输出。" % (
-                len(report["checks"]),
+                report.get("judged_count", 0),
                 report["fail_count"],
                 report["warn_count"],
+                _nc,
                 ai_note))
         dlg.CommonButtons = TaskDialogCommonButtons.Ok
         dlg.Show()

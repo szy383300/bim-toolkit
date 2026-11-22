@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 u"""
 bimconv_walls.py —— 翻模「墙线处理」层：双线轮廓取中、零散墙段链成连续墙线、墙段接合、门/窗寄宿索引。
 
@@ -294,6 +294,9 @@ def _build_wall_plans(wall_plans, others):
                 "level": key[0],
                 "height": key[1],
                 "type_hint": key[2],
+                # v2.14: 合并后的墙仍要能回答"这层是怎么定的"——图框路由
+                # 的依据不能在链化后丢失，预览的定层报表靠它
+                "level_basis": base.get("level_basis") or u"",
                 "source": base["source"],
                 "geom": {"type": "lwpolyline",
                          "points": [list(pp) for pp in poly],
@@ -376,6 +379,10 @@ def _resolve_wall_overlaps(merged):
                    key=lambda i: -((items[i][1][2] - items[i][1][0]) +
                                    (items[i][1][3] - items[i][1][1])))
     drop = [False] * len(items)
+    # 分区键：这段去重**必须看楼层**。多层图里上下两层的同坐标墙在 2D 上完全同心，
+    # 不看就会把一层整层删掉（合成真值「跨楼层不得串元数据」实测 2 层塌成 1 面）。
+    part = [(it[0].get("level", u""), it[0].get("height", 0),
+             it[0].get("type_hint", u"")) for it in items]
     for a in range(len(order)):
         ia = order[a]
         if drop[ia]:
@@ -384,7 +391,7 @@ def _resolve_wall_overlaps(merged):
         la = abs(ra[2] - ra[0]) + abs(ra[3] - ra[1])
         for b in range(a + 1, len(order)):
             ib = order[b]
-            if drop[ib]:
+            if drop[ib] or part[ia] != part[ib]:
                 continue
             rb = items[ib][1]
             if ra[5] != rb[5]:
@@ -492,6 +499,89 @@ def _resolve_wall_overlaps(merged):
     return _build_wall_plans(keep + diag_segs, others)
 
 
+def _angle_groups(items):
+    u"""按角度(mod 180°)贪心分簇；首尾簇可能环绕同簇。"""
+    items = sorted(items, key=lambda d: d[6])
+    groups = []
+    cur = [items[0]]
+    for d in items[1:]:
+        if d[6] - cur[-1][6] <= _DIAG_DIR_TOL:
+            cur.append(d)
+        else:
+            groups.append(cur)
+            cur = [d]
+    groups.append(cur)
+    if len(groups) > 1 and (groups[0][0][6] + 180.0 -
+                            groups[-1][-1][6]) <= _DIAG_DIR_TOL:
+        groups[0] = groups[-1] + groups[0]
+        groups.pop()
+    return groups
+
+
+def _merge_dir_group(grp):
+    u"""同方向簇内贪心配对：垂距<60mm 判重复线（保长弃短），
+    60~450mm 且中点落在对方沿线 [0.05,0.95] 判双线墙 → 取中线、厚度取实测。
+    """
+    wsum = sum(d[5] for d in grp)
+    theta = sum(d[6] * d[5] for d in grp) / wsum
+    th = math.radians(theta)
+    nx, ny = -math.sin(th), math.cos(th)          # 法向
+    grp = sorted(grp, key=lambda d: -d[5])        # 按长度降序
+    alive = []   # [x1, y1, x2, y2, t_mm, plan]
+    for d in grp:
+        p, x1, y1, x2, y2, L, ang = d
+        mx, my = (x1 + x2) * 0.5, (y1 + y2) * 0.5
+        t_src = float(p.get("thickness_mm") or 240.0)
+        merged_into = None
+        for ai, av in enumerate(alive):
+            ax1, ay1, ax2, ay2, at, _ap = av
+            dx, dy = ax2 - ax1, ay2 - ay1
+            La = math.hypot(dx, dy)
+            if La < 1.0:
+                continue
+            off = abs((mx - (ax1 + ax2) * 0.5) * nx +
+                      (my - (ay1 + ay2) * 0.5) * ny)
+            pa = ((mx - ax1) * dx + (my - ay1) * dy) / (La * La)
+            # 本段被 a 沿向覆盖的比例（相对本段自身长度）。
+            # 必须算这个：旧实现只看垂距就判"重复线"，同轴但相隔很远的两面墙
+            # 会被整条删掉（合成真值「同轴远隔不得吞墙」实测 8000mm→4000mm），
+            # 而 _rechain 只补 <=2600mm 的缝，补不回来。
+            tb1 = ((x1 - ax1) * dx + (y1 - ay1) * dy) / (La * La)
+            tb2 = ((x2 - ax1) * dx + (y2 - ay1) * dy) / (La * La)
+            lo, hi = min(tb1, tb2), max(tb1, tb2)
+            cov = max(0.0, min(hi, 1.0) - max(lo, 0.0)) * La / max(L, 1e-9)
+            if off < _DIAG_DUP_GAP and cov > _DIAG_DUP_COVER:
+                merged_into = ai          # 真重复线：a 更长，本段丢弃
+                break
+            if (off < max(_DIAG_MERGE_GAP, t_src) and
+                    (0.05 <= pa <= 0.95 or cov > _DIAG_DUP_COVER)):
+                # 双线墙取中：中线过两中点平均，端点取两者投影范围
+                cmx, cmy = (mx + (ax1 + ax2) * 0.5) * 0.5, \
+                           (my + (ay1 + ay2) * 0.5) * 0.5
+                hx, hy = (ax2 - ax1) * 0.5, (ay2 - ay1) * 0.5
+                if L * 0.5 > math.hypot(hx, hy):
+                    hx, hy = (x2 - x1) * 0.5, (y2 - y1) * 0.5
+                alive[ai] = [cmx - hx, cmy - hy, cmx + hx, cmy + hy,
+                             max(off, t_src, at), av[5]]
+                merged_into = -2
+                break
+        if merged_into is None:
+            alive.append([x1, y1, x2, y2, t_src, p])
+    out = []
+    for x1, y1, x2, y2, t, base in alive:
+        rec = dict(base)
+        g = dict(base.get("geom") or {})
+        g["points"] = [[x1, y1], [x2, y2]]
+        g["closed"] = False
+        g["type"] = "lwpolyline"
+        rec["geom"] = g
+        rec["thickness_mm"] = int(round(t))
+        rec["note"] = ((base.get("note") or u"") +
+                       u"；v2.12 同向近带取中").strip(u"； ")
+        out.append(rec)
+    return out
+
+
 def consolidate_walls(planned):
     u"""把零散墙 plan 按 (楼层, 层高, 类型) 分组，链成连续墙线后再生成 plan。
 
@@ -515,30 +605,237 @@ def consolidate_walls(planned):
     # v2.11f: 尾部追加碎片墙再链化（同线共向、间隙<=2600mm 重连，门洞交 Revit 开）
     return _rechain(_diag_dedupe(_resolve_wall_overlaps(merged)))
 
+# --------------------------------------------------------------------------- #
+# 4) 轴网归并：精确重复 + 按开间分段的共线轴段 → 一条连续轴网
+# --------------------------------------------------------------------------- #
+# 真机实测（仙湖别墅.rvt 2026-10-08）：3231 条轴网里只有 1172 条不同定位线，
+# 2059 条是精确重复（同一条最多建 6 遍）；剩下 1172 条又多是"按开间逐段画"
+# 的轴线（中国施工图习惯：每跨一条，端点接气泡编号），一条真实轴线被拆成几段。
+# 后果：轴网气泡糊成一片，且每次重跑再叠一层。
+#
+# 一个算法同时解决两件事：把同方向的轴段投影到它的方向轴上，按"垂距"分到
+# 同一条直线，再对轴向区间做并集。重复段自然合并，共线连续段也自然合并。
+# Revit 的 Grid.Create 只接受直线，所以每条合并后的区间发一条两点轴网。
+_GRID_ANGLE_TOL_DEG = 1.0    # 同轴方向角容差
+_GRID_OFFSET_TOL_MM = 30.0   # 垂距在此范围内算同一条轴线
+_GRID_GAP_TOL_MM = 60.0      # 轴向间隙小于此值就接上（气泡端点常有几十 mm 抖动）
+_GRID_MIN_LEN_MM = 500.0     # 短于此的轴段丢弃（实测有 248.5mm 的垃圾段）
 
-# ---- v2.11e: 斜线墙方向聚类消解（5f5e575450 墙堆叠实录驱动）----
-# 现象：斜坐标系图 5298 段墙中 3447 对近平行近邻（垂距主峰 100-300mm = 双线墙
-# 各自成墙），顶部交叉如筏。根因：_resolve_wall_overlaps 三相全部基于轴对齐，
-# 斜线段只透传不去重不取中。
-# 方案：按方向角(mod 180°)聚类，簇内贪心配对——垂距<60mm 判重复线（保长弃短），
-# 垂距 60~450mm 判双线墙（取中线合并，厚度=间距）；配不上的原样保留。
+
+def _grid_axis_key(seg):
+    u"""返回 (角度 mod 180, 方向单位向量, 法向单位向量)。
+
+    seg 的前四项恒为 (x1,y1,x2,y2)；后面还挂着长度与来源 plan，
+    所以只取前四项，不要整元解包。
+    """
+    x1, y1, x2, y2 = seg[0], seg[1], seg[2], seg[3]
+    ang = math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180.0
+    th = math.radians(ang)
+    return ang, (math.cos(th), math.sin(th)), (-math.sin(th), math.cos(th))
+
+
+def _grid_groups(segs):
+    u"""按方向角分桶，桶内再按垂距分直线。返回 [[seg, ...], ...]。"""
+    by_ang = sorted(segs, key=lambda s: _grid_axis_key(s)[0])
+    buckets = []
+    cur = []
+    cur_ang = None
+    for s in by_ang:
+        a = _grid_axis_key(s)[0]
+        if cur_ang is None or abs(a - cur_ang) <= _GRID_ANGLE_TOL_DEG:
+            cur.append(s)
+            cur_ang = a if cur_ang is None else cur_ang
+        else:
+            buckets.append(cur)
+            cur = [s]
+            cur_ang = a
+    if cur:
+        buckets.append(cur)
+    # 环绕：0° 与 180° 是同一条线
+    if len(buckets) > 1:
+        a0 = _grid_axis_key(buckets[0][0])[0]
+        a1 = _grid_axis_key(buckets[-1][0])[0]
+        if a0 + 180.0 - a1 <= _GRID_ANGLE_TOL_DEG:
+            buckets[0] = buckets[-1] + buckets[0]
+            buckets.pop()
+
+    lines = []
+    for b in buckets:
+        if not b:
+            continue
+        _a, u, n = _grid_axis_key(b[0])
+        # 用"中点在法向上的投影"当直线标识，再按同样的一维区间并分组
+        offs = []
+        for s in b:
+            mx, my = (s[0] + s[2]) * 0.5, (s[1] + s[3]) * 0.5
+            offs.append((mx * n[0] + my * n[1], s))
+        offs.sort(key=lambda t: t[0])
+        cur_line = [offs[0][1]]
+        cur_off = offs[0][0]
+        for o, s in offs[1:]:
+            if o - cur_off <= _GRID_OFFSET_TOL_MM:
+                cur_line.append(s)
+            else:
+                lines.append((u, n, cur_line))
+                cur_line = [s]
+                cur_off = o
+        lines.append((u, n, cur_line))
+    return lines
+
+
+def consolidate_grids(planned):
+    u"""把零散/重复的轴网段归并成尽量少的连续轴网。非轴网 plan 原样保留。
+
+    **顺序与总数都是契约**：plan_from_json 的返回顺序被 bimconv_build 依赖
+    （"results 与 planned 同序"用于逐件补救定位），所以合并结果写回该组第一段
+    的原始位置，其余原位删除。只有"短于 _GRID_MIN_LEN_MM 的垃圾段"和
+    "连坐标都读不出来的段"是刻意丢弃的，其余一律保留在原位。
+    纯 Python，可 headless 测。
+    """
+    segs = []          # (x1, y1, x2, y2, L, plan, planned_index)
+    drop_idx = set()   # 刻意丢弃的原始位置
+    for i, p in enumerate(planned):
+        if p.get("element_type") != "grid":
+            continue
+        g = p.get("geom") or {}
+        a, b = g.get("start"), g.get("end")
+        if not (a and b):
+            pts = g.get("points") or []
+            if len(pts) >= 2:
+                a, b = pts[0], pts[-1]
+        if not (a and b):
+            continue                      # 读不出坐标：不参与归并，留在原位
+        x1, y1 = float(a[0]), float(a[1])
+        x2, y2 = float(b[0]), float(b[1])
+        L = math.hypot(x2 - x1, y2 - y1)
+        if L < _GRID_MIN_LEN_MM:
+            drop_idx.add(i)               # 垃圾短段：真机实测有 248.5mm 的
+            continue
+        segs.append((x1, y1, x2, y2, L, p, i))
+    if not segs:
+        return [p for i, p in enumerate(planned) if i not in drop_idx]
+
+    replace_idx = {}
+    tail = []          # 同一直线拆出的后续段，追加到末尾
+    for u, n, line in _grid_groups(segs):
+        # 把该直线上所有段投影到方向轴，做区间并
+        ivs = []
+        for s in line:
+            t1 = s[0] * u[0] + s[1] * u[1]
+            t2 = s[2] * u[0] + s[3] * u[1]
+            ivs.append((min(t1, t2), max(t1, t2), s))
+        ivs.sort(key=lambda t: t[0])
+        merged = []
+        lo, hi, grp = ivs[0]
+        grp = [grp]
+        for a, b, s in ivs[1:]:
+            if a - hi <= _GRID_GAP_TOL_MM:
+                hi = max(hi, b)
+                grp.append(s)
+            else:
+                merged.append((lo, hi, grp))
+                lo, hi, grp = a, b, [s]
+        merged.append((lo, hi, grp))
+        # 该组所有原始位置：最小的那个放合并结果，其余删除
+        idxs = sorted(s[6] for s in line)
+        keep_at = idxs[0]
+        for j in idxs[1:]:
+            drop_idx.add(j)
+        # 法向距离：取组内所有段中点在法向上的均值
+        off = sum(((s[0] + s[2]) * 0.5 * n[0] + (s[1] + s[3]) * 0.5 * n[1])
+                  for s in line) / max(1, len(line))
+        slots = []
+        for a, b, grp in merged:
+            if (b - a) < _GRID_MIN_LEN_MM:
+                for s in grp:
+                    drop_idx.add(s[6])
+                continue
+            slots.append((a, b, grp))
+        if not slots:
+            drop_idx.add(keep_at)
+            continue
+        for k, (a, b, grp) in enumerate(slots):
+            base = grp[0][5]
+            np_ = dict(base)
+            g = dict(base.get("geom") or {})
+            g["type"] = "line"
+            # 投影标量 t 还原成平面点：点 = t*u + off*n
+            g["start"] = [a * u[0] + off * n[0], a * u[1] + off * n[1]]
+            g["end"] = [b * u[0] + off * n[0], b * u[1] + off * n[1]]
+            np_["geom"] = g
+            np_["note"] = ((base.get("note") or u"") +
+                           u"；轴网归并 %d 段" % len(grp)).strip(u"； ")
+            np_["source"] = u";".join((s[5].get("source") or u"") for s in grp[:5])
+            if k == 0:
+                replace_idx[keep_at] = np_
+            else:
+                # 同一条直线被切成互不相接的多段：后续段追加到末尾。
+                # 不能用 planned 索引当合成键（会和真实索引撞），单独收一份。
+                tail.append(np_)
+    res = []
+    extra = dict(replace_idx)
+    for i, p in enumerate(planned):
+        if i in extra:
+            res.append(extra.pop(i))
+            continue
+        if i in drop_idx:
+            continue
+        res.append(p)
+    res.extend(extra[k] for k in sorted(extra))
+    res.extend(tail)
+    return res
+
+
+# ---- v2.11e → v2.12: 同向近带配对（斜墙 + 正交墙统一处理）----
+# 现象（v2.11e 原始动因，5f5e575450 墙堆叠实录）：斜坐标系图 5298 段墙中 3447 对
+# 近平行近邻（垂距主峰 100-300mm = 双线墙各自成墙），顶部交叉如筏。
+# v2.12 更正（2026-10-07 真图实测）：当时把这条只用在斜墙上、让轴对齐墙"原样透传"，
+# 是个**判据漏洞不是性能取舍**。5 张真图（小区住宅楼 270套，ODA 转换）量过：
+#   consolidate_walls 把墙段 28288 → 5991（降 78.8%），但**残余的真重复 100% 是
+#   轴对齐双线墙**（判据：平行 + 垂距 80~420mm + 轴向重叠>60%），
+#   各图残余率 r1 67.7% / r6 60.8% / r5 27.3% / r2 7.3% / r4 5.3%。
+#   原因：_resolve_wall_overlaps 只去**同心**重复线（_MERGE_TOL_MM=2mm），
+#   _outline_centerline_plans 只管**闭合**轮廓，正交开口双线墙两边都不管。
+# 方案：按 (楼层,层高,类型) 分区，区内按方向角(mod 180°)聚簇，簇内贪心配对——
+#   垂距 <60mm 判重复线（保长弃短）；60~450mm 且中点落在对方沿线 [0.05,0.95]
+#   判双线墙 → 取中线合并，厚度=实测间距。配不上的原样保留。
+# 注意：**厚度不进分区键**——实测有 14~39% 的重复对是"一边标了 240、一边没标"，
+#   按厚度分组会把它们拆到两个区里，反而合不上。
 _DIAG_DIR_TOL = 5.0       # 同簇角度容差（度）
 _DIAG_DUP_GAP = 60.0      # 垂距 < 此值 = 重复线
-_DIAG_MERGE_GAP = 450.0   # 垂距 < 此值 = 双线墙取中
+_DIAG_DUP_COVER = 0.5     # 且沿向覆盖 > 此比例才判重复（否则是同轴两面不同墙）
+# 双线墙取中的垂距上限。**2026-10-08 按 5 张真图的"最近平行对垂距"分布定的**
+# （只统计轴向重叠>60% 的对，20mm 一档）：
+#   100-120mm 1654 | 120-140 696 | 180-200 3715 | 200-220 9268(主峰)
+#   220-240 293 | 240-260 3075 | [谷 260-280 仅 11] | 280-300 55
+#   300-320 518  —— 夹在两个谷之间的独立峰 = 300mm 剪力墙（真图常见厚度）
+#   [谷 320-340 仅 19] | 340-400 ~372 | 400-420 207 | 440-720 每档 88~192
+#   —— 340 之后是"两面独立墙/墙+柱面/家具"的宽噪声带，没有再成峰的
+# 所以界线取 **330**，落在 320-340 这个谷上：收住 300mm 剪力墙，挡掉 340+ 的
+# 误并。旧值 450 太松：真机验收时 8 堵 10~16m 的长墙被当成双线并成了
+# "DWG-400厚"，那是两个独立构件。
+# 注意下面配对时用的是 max(_DIAG_MERGE_GAP, t_src)：已经由闭合轮廓实测出
+# 厚度的墙（t_src 可能 >330）允许更宽，那是真厚墙，不该被收紧误伤。
+_DIAG_MERGE_GAP = 330.0   # 垂距 < 此值 = 双线墙取中
 _DIAG_MIN_LEN = 800.0     # 参与配对的最短线长
 _DIAG_OVERLAP_FRAC = 0.5  # 沿向重叠 > 短线长×此系数才配对
 
 
-def _diag_dedupe(merged):
-    u"""斜线墙同向近带配对：重复线去重 + 双线墙取中。轴对齐墙原样透传。"""
+def _split_to_segments(merged):
+    u"""把墙 plan 拆成单段，每段自带原 plan 的元数据；短段单独返回。
+
+    返回 (segs, passthrough, others)：
+      segs        : [plan, x1, y1, x2, y2, L, ang_deg(mod 180)]
+      passthrough : 短段（< _DIAG_MIN_LEN）plan，含门洞碎段，不参与配对
+      others      : 非墙 plan
+    """
     walls = [p for p in merged if p["element_type"] == "wall"]
     others = [p for p in merged if p["element_type"] != "wall"]
-    axis_plans = []
-    diag = []   # (plan, x1, y1, x2, y2, L, ang_deg mod 180)
+    segs = []
+    passthrough = []
     for p in walls:
         pts = p["geom"].get("points") or []
         seq = pts + ([pts[0]] if (p["geom"].get("closed") and pts) else [])
-        is_diag = False
         for k in range(len(seq) - 1):
             a, b = seq[k], seq[k + 1]
             q = dict(p)
@@ -546,113 +843,39 @@ def _diag_dedupe(merged):
             g["points"] = [list(a), list(b)]
             g["closed"] = False
             q["geom"] = g
-            if _seg_axis_rect(q) is None:
-                x1, y1 = float(a[0]), float(a[1])
-                x2, y2 = float(b[0]), float(b[1])
-                L = math.hypot(x2 - x1, y2 - y1)
-                if L >= _DIAG_MIN_LEN:
-                    ang = math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180.0
-                    diag.append([q, x1, y1, x2, y2, L, ang])
-                else:
-                    axis_plans.append(q)   # 短斜段不参与，原样保留
-            else:
-                axis_plans.append(q)
-    if not diag:
+            x1, y1 = float(a[0]), float(a[1])
+            x2, y2 = float(b[0]), float(b[1])
+            L = math.hypot(x2 - x1, y2 - y1)
+            if L < _DIAG_MIN_LEN:
+                passthrough.append(q)   # 短段不参与，原样保留
+                continue
+            ang = math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180.0
+            segs.append([q, x1, y1, x2, y2, L, ang])
+    return segs, passthrough, others
+
+
+def _diag_dedupe(merged):
+    u"""同向近带配对：重复线去重 + 双线墙取中（斜墙与正交墙一视同仁）。"""
+    segs, passthrough, others = _split_to_segments(merged)
+    if not segs:
         return merged
 
-    # 方向簇划分（贪心：按角度排序，相邻差 <=tol 归同簇，簇加权平均角）
-    diag.sort(key=lambda d: d[6])
-    groups = []
-    cur = [diag[0]]
-    for d in diag[1:]:
-        if d[6] - cur[-1][6] <= _DIAG_DIR_TOL:
-            cur.append(d)
-        else:
-            groups.append(cur)
-            cur = [d]
-    groups.append(cur)
-    # 环绕处理：首簇与末簇可能同簇（角度 179/1）
-    if len(groups) > 1 and (groups[0][0][6] + 180.0 -
-                            groups[-1][-1][6]) <= _DIAG_DIR_TOL:
-        groups[0] = groups[-1] + groups[0]
-        groups.pop()
+    # 先按 (楼层, 层高, 类型提示) 分区，再在区内做方向聚簇。
+    # 分区是必须的：旧实现让整簇共用 grp[0] 的 level/height/type_hint，
+    # 斜墙时代影响面小，一旦纳入正交墙，整张图所有横墙会被压成同一楼层。
+    buckets = {}
+    for d in segs:
+        p = d[0]
+        key = (p.get("level"), p.get("height"), p.get("type_hint"))
+        buckets.setdefault(key, []).append(d)
 
-    out_plans = list(axis_plans)
-    for grp in groups:
-        if len(grp) < 2:
-            for d in grp:
-                out_plans.append(d[0])
-            continue
-        # 主方向角（长度加权平均）
-        wsum = sum(d[5] for d in grp)
-        theta = sum(d[6] * d[5] for d in grp) / wsum
-        th = math.radians(theta)
-        ux, uy = math.cos(th), math.sin(th)       # 主方向单位向量
-        nx, ny = -uy, ux                          # 法向
-        # 按长度降序贪心配对
-        grp.sort(key=lambda d: -d[5])
-        alive = []   # [x1,y1,x2,y2, t_mm]
-        for d in grp:
-            _p, x1, y1, x2, y2, L, ang = d
-            da = min(abs(ang - theta), 180 - abs(ang - theta))
-            mx, my = (x1 + x2) * 0.5, (y1 + y2) * 0.5
-            t_src = float(d[0].get("thickness_mm") or 240.0)
-            merged_idx = None
-            for ai, av in enumerate(alive):
-                ax1, ay1, ax2, ay2, at = av
-                # b 中点在 a 线上的垂距
-                dx, dy = ax2 - ax1, ay2 - ay1
-                La = math.hypot(dx, dy)
-                if La < 1.0:
-                    continue
-                off = (mx - ax1) * (ay2 - ay1) / La * -1.0 + \
-                      (my - ay1) * (ax2 - ax1) / La
-                # 上式符号无所谓，取绝对值；等价 dot(mid-mid, normal)
-                off = abs((mx - (ax1 + ax2) * 0.5) * nx +
-                          (my - (ay1 + ay2) * 0.5) * ny)
-                # 沿向重叠
-                pa = (mx - ax1) * dx / (La * La)
-                Lb = L
-                ov = min(max(pa, 0.0), 1.0) * La + \
-                    min(0.0, max((0.0 - pa), 0.0)) * 0.0
-                # 简化：b 中点投影 t∈[0,1] 且垂距小即认为大比例重叠
-                if off < _DIAG_DUP_GAP:
-                    merged_idx = ai      # 重复线：保长弃短（a 更长）
-                    break
-                if off < max(_DIAG_MERGE_GAP, t_src) and 0.05 <= pa <= 0.95:
-                    # 双线墙取中：中线过两中点平均，端点取两者投影范围
-                    cmx, cmy = (mx + (ax1 + ax2) * 0.5) * 0.5, \
-                               (my + (ay1 + ay2) * 0.5) * 0.5
-                    hx = (ax2 - ax1) * 0.5
-                    hy = (ay2 - ay1) * 0.5
-                    if L * 0.5 > math.hypot(hx, hy):
-                        hx, hy = (x2 - x1) * 0.5, (y2 - y1) * 0.5
-                    nlx1, nly1 = cmx - hx, cmy - hy
-                    nlx2, nly2 = cmx + hx, cmy + hy
-                    nt = max(off, t_src, at)
-                    alive[ai] = [nlx1, nly1, nlx2, nly2, nt]
-                    merged_idx = -2
-                    break
-            if merged_idx is None:
-                alive.append([x1, y1, x2, y2, t_src])
-            # merged_idx==-2 已并入 alive；重复线直接丢弃
-        for (x1, y1, x2, y2, t) in alive:
-            base = grp[0][0]
-            rec = {
-                "element_type": "wall",
-                "reliability": base.get("reliability", "mid"),
-                "level": base.get("level", ""),
-                "height": base.get("height", 3000),
-                "type_hint": base.get("type_hint", ""),
-                "source": base.get("source", ""),
-                "geom": {"type": "lwpolyline",
-                         "points": [[x1, y1], [x2, y2]],
-                         "closed": False,
-                         "layer": base["geom"].get("layer", "")},
-                "note": u"v2.11e 斜墙取中",
-                "thickness_mm": int(round(t)),
-            }
-            out_plans.append(rec)
+    out_plans = list(passthrough)
+    for items in buckets.values():
+        for grp in _angle_groups(items):
+            if len(grp) < 2:
+                out_plans.extend(d[0] for d in grp)
+                continue
+            out_plans.extend(_merge_dir_group(grp))
     return out_plans + others
 
 
@@ -779,6 +1002,7 @@ def _rechain(merged):
                         "level": base.get("level", ""),
                         "height": base.get("height", 3000),
                         "type_hint": base.get("type_hint", ""),
+                        "level_basis": base.get("level_basis") or u"",
                         "source": base.get("source", ""),
                         "geom": {"type": "lwpolyline",
                                  "points": [[ax_, ay_], [bx_, by_]],
@@ -1177,3 +1401,69 @@ def _nearest_wall(pt, buckets, key):
         if best_d < 1e-6:
             break
     return best, best_c, best_d
+
+
+# ---------------------------------------------------------------------------
+# 5) 子图聚类：一张 DWG 里常常并排画着十几张图（各层平面 + 立面 + 剖面 + 详图）。
+#    而翻模的归位单位一直是「文件」，于是这些图被当成一张平面图整体建进同一层。
+#    2026-10-11 高层住宅「平立面图.dwg」实测：19789 条墙线在图面上分成 30 个
+#    空间连通簇（24 簇 ≥100 条，覆盖 98.5%），计划里却只有一个楼层可落
+#    → 必然「墙重叠」。这里先只做如实计数，供预览揭示。
+# ---------------------------------------------------------------------------
+_SUBDRAWING_CELL_MM = 10000.0   # 连通网格边长：远大于墙线抖动，远小于图与图的间距
+_SUBDRAWING_MIN_ITEMS = 100     # 低于此的簇按噪声算（节点详图、指北针、文字底线）
+
+
+def subdrawing_clusters(planned, cell_mm=_SUBDRAWING_CELL_MM):
+    u"""按图面位置把计划连通成分张子图 → [(下标...), ...]，按规模降序。
+
+    只看坐标、不看图层名：立面/剖面图上画的墙线用的就是和平面一样的 WALL 层名，
+    图层区分不了它们，能区分的只有"它们画在图纸的哪一块"。
+    """
+    cells = {}
+    for i, p in enumerate(planned):
+        if not p.get("geom"):
+            continue
+        try:
+            segs = _wall_segments(p)
+        except Exception:
+            continue
+        for a, b in segs:
+            for pt in (a, b):
+                try:
+                    key = (int(pt[0] // cell_mm), int(pt[1] // cell_mm))
+                except Exception:
+                    continue
+                bucket = cells.get(key)
+                if bucket is None:
+                    cells[key] = [i]
+                elif bucket[-1] != i:
+                    bucket.append(i)
+
+    seen = set()
+    out = []
+    for key in cells:
+        if key in seen:
+            continue
+        seen.add(key)
+        stack = [key]
+        idxs = []
+        while stack:
+            k = stack.pop()
+            idxs.extend(cells[k])
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    n = (k[0] + dx, k[1] + dy)
+                    if n in cells and n not in seen:
+                        seen.add(n)
+                        stack.append(n)
+        out.append(sorted(set(idxs)))
+    out.sort(key=len, reverse=True)
+    return out
+
+
+def subdrawing_summary(planned):
+    u"""(子图簇数, 簇内图元数, 总图元数)，噪声簇不计入簇数。"""
+    cl = subdrawing_clusters(planned)
+    big = [c for c in cl if len(c) >= _SUBDRAWING_MIN_ITEMS]
+    return len(big), sum(len(c) for c in big), len(planned)

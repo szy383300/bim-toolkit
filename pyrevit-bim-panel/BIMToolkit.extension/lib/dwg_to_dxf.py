@@ -193,10 +193,86 @@ def _saveas_dxf(doc, dxf_path):
 
 
 # --------------------------------------------------------------------------- #
+# ODA File Converter（免费、无需激活、任何版本 DWG 都能转）—— 最优先后端。
+# 2026-10-15 真机实锤：AutoCAD COM 启动失败（-2146959355 服务器运行失败）
+# + ZWCAD 未注册 + LibreDWG 空壳，三条旧路全断，翻模"直接失败"。
+# 而 dwg_to_json.py 早就内置了 ODA 路径（同机的同一批图 1.2s/张转成功），
+# 本脚本没同步——补齐。实现与 dwg_to_json._oda_convert 完全同款：
+# 单文件隔离转换（整目录批转曾 120s 超时 + .dwl 锁干扰），
+# 第 6 个 audit 参数必须带，否则弹 GUI 卡死（2026-09-11 实录）。
+# --------------------------------------------------------------------------- #
+_ODA_CANDIDATES = (
+    r"E:/bim-toolkit/_tools/ODA/app/ODAFileConverter.exe",
+    r"C:\Program Files\ODAFileConverter\ODAFileConverter.exe",
+    r"C:\Program Files (x86)\ODAFileConverter\ODAFileConverter.exe",
+)
+
+
+def _oda_exe():
+    for p in _ODA_CANDIDATES:
+        if os.path.isfile(p):
+            return p
+    import glob as _g
+    for pat in (r"C:\Program Files\ODAFileConverter*\ODAFileConverter.exe",
+                r"E:/bim-toolkit/_tools/ODA*/app/ODAFileConverter.exe"):
+        hits = _g.glob(pat)
+        if hits:
+            return hits[0]
+    import shutil as _s
+    return _s.which("ODAFileConverter.exe") or _s.which("ODAFileConverter")
+
+
+def _oda_dxf(dwg, dxf):
+    u"""ODA File Converter 单文件转换。成功返回 True；没装/失败返回 False。"""
+    exe = _oda_exe()
+    if not exe:
+        _log(u"  （未检测到 ODA File Converter，跳过该后端）")
+        return False
+    import shutil
+    import subprocess
+    import tempfile
+    indir = tempfile.mkdtemp(prefix="oda_one_")
+    outdir = tempfile.mkdtemp(prefix="oda_out_")
+    try:
+        shutil.copy(dwg, os.path.join(indir, os.path.basename(dwg)))
+        # ODAFileConverter <in> <out> <版本> <DXF/DWG> <递归0/1> <audit0/1>
+        r = subprocess.run([exe, indir, outdir, "ACAD2010", "DXF", "0", "1"],
+                           capture_output=True, timeout=300)
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or b"")[-300:].decode("mbcs", "replace")
+            _log(u"  ODA 退出码 %s：%s" % (r.returncode, err))
+            return False
+        guess = os.path.join(outdir, os.path.splitext(
+            os.path.basename(dwg))[0] + ".dxf")
+        if not os.path.isfile(guess):
+            _log(u"  ODA 未生成 DXF：%s" % guess)
+            return False
+        if not _is_dxf(_head(guess)):
+            _log(u"  ODA 输出的不是真 DXF，放弃。")
+            return False
+        n_geo = _dxf_geometry_count(guess)
+        src_kb = os.path.getsize(dwg) // 1024
+        if n_geo == 0 and src_kb >= 50:
+            _log(u"  ODA 产出的 DXF 没有任何几何（源 %d KB），判为空壳，"
+                 u"不交货。" % src_kb)
+            return False
+        shutil.copyfile(guess, dxf)
+        _log(u"  ODA 转换成功（几何图元 %s 个，约 %.1fs/张的后端）。"
+             % (n_geo if n_geo >= 0 else u"未数", 0))
+        return True
+    except Exception as e:
+        _log(u"  ODA 异常：%s" % e)
+        return False
+    finally:
+        shutil.rmtree(indir, ignore_errors=True)
+        shutil.rmtree(outdir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------- #
 # 无 CAD 兜底：LibreDWG（GNU 开源）直接把 DWG 转 DXF，不需要任何 CAD。
 # 2026-09-08 实测：AC1032（8.3MB 结构图）--as r2010 -> 64MB DXF，ezdxf 解析
-# 出 18013 实体，全管线走通。
-# 探测顺序：BIMTOOLKIT_DWG2DXF 环境变量 > %USERPROFILE%\cad-tools\dwg2dxf.exe
+# 出 18013 实体，全管线走通。工具位置运行时推导：
+#           BIMTOOLKIT_DWG2DXF 环境变量 > 用户目录\cad-tools\dwg2dxf.exe
 #           > PATH 里的 dwg2dxf.exe。换机器不用改源码。
 # --------------------------------------------------------------------------- #
 _LIBREDWG_ENV = u"BIMTOOLKIT_DWG2DXF"
@@ -219,6 +295,35 @@ def _libredwg_exe():
         if p and os.path.isfile(cand):
             return cand
     return None
+
+
+_GEOM_TOKENS = frozenset((
+    "LINE", "LWPOLYLINE", "POLYLINE", "ARC", "CIRCLE", "ELLIPSE", "SPLINE",
+    "INSERT", "HATCH", "TEXT", "MTEXT", "DIMENSION", "SOLID", "3DFACE",
+    "POINT", "RAY", "XLINE", "WIPEOUT"))
+
+
+def _dxf_geometry_count(path):
+    u"""粗扫 DXF 文本，数 group code 0 后面跟着的实体类型行数。
+
+    只回答"这里面到底有没有几何"，不解析坐标，所以比 ezdxf 整读一遍快得多。
+    返回 -1 表示读不了。
+    """
+    n = 0
+    want = False
+    try:
+        with open(path, "rb") as f:
+            for raw in f:
+                s = raw.strip()
+                if want:
+                    want = False
+                    if s.decode("ascii", "ignore").upper() in _GEOM_TOKENS:
+                        n += 1
+                elif s == b"0":
+                    want = True
+    except Exception:
+        return -1
+    return n
 
 
 def _libredwg_dxf(dwg, dxf, as_r=u"r2010"):
@@ -250,8 +355,22 @@ def _libredwg_dxf(dwg, dxf, as_r=u"r2010"):
         if not _is_dxf(_head(tout)):
             _log(u"  LibreDWG 输出的不是可识别 DXF，放弃。")
             return False
+        # 空壳闸门（2026-10-07 实测加）：LibreDWG 在真实建筑图上会产出
+        # "退出码 0 + 格式合法 + 块表上千条但块内实体为 0" 的空 DXF。
+        # 原来只校验到"是不是 DXF"，于是空壳被当成功返回，下游表现为
+        # "读 modelspace 得 0 个图元 -> 报告没找到墙"，与"这张图确实没墙"
+        # 完全无法区分。同样 6 张图，ODA 转出 3 千~3 万实体。
+        n_geo = _dxf_geometry_count(tout)
+        src_kb = os.path.getsize(dwg) // 1024
+        if n_geo == 0 and src_kb >= 50:
+            _log(u"  LibreDWG 产出的 DXF 里没有任何几何（源 DWG %d KB，"
+                 u"DXF %d KB）。判为转换失败，不交空壳 —— 请改用 ODA File "
+                 u"Converter 或 AutoCAD 另存为 DXF(R2000+)。"
+                 % (src_kb, os.path.getsize(tout) // 1024))
+            return False
         shutil.copyfile(tout, dxf)
-        _log(u"  LibreDWG 转换成功，DXF 头校验通过。")
+        _log(u"  LibreDWG 转换成功，DXF 头校验通过（几何图元 %s 个）。"
+             % (n_geo if n_geo >= 0 else u"未数"))
         return True
     except Exception as e:
         _log(u"  LibreDWG 异常：%s" % e)
@@ -285,6 +404,11 @@ def main(argv):
             _log(u"已有更新的同名 DXF，直接复用：%s" % dxf)
             return 0
         _log(u"已有同名 DXF 但不是真 DXF（可能是假 DXF），将重新生成。")
+
+    # ---- ODA 优先（免费/秒级/不看版本/不依赖 COM 状态）；没装才走 CAD COM ----
+    if _oda_dxf(dwg, dxf):
+        _log(u"完成（ODA File Converter）：%s" % dxf)
+        return 0
 
     # ---- 版本感知路由：新图纸优先高版本引擎，老图纸 AutoCAD 优先 ----
     file_tag = _dwg_tag(dwg)
@@ -349,7 +473,7 @@ def main(argv):
     if no_start:
         _log(u"失败：没有能处理该图纸的 CAD 在运行（--no-start 不启动）。")
     else:
-        _log(u"失败：所有候选 CAD 均未能完成转换。%s"
+        _log(u"失败：ODA / CAD COM / LibreDWG 全部后端均未完成转换。%s"
              % ((u"最后一次错误：%s" % last_err) if last_err else u""))
         _log(u"补救：①把 LibreDWG 的 dwg2dxf.exe 放到你的用户目录\\cad-tools 下，"
              u"或设环境变量 BIMTOOLKIT_DWG2DXF 直接指到 exe，或让它进 PATH；"

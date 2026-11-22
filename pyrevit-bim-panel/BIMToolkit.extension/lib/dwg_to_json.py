@@ -2,16 +2,16 @@
 """
 dwg_to_json.py —— 把 DWG/DXF 读成中性 model_plan.json（翻模第一步）。
 
-运行环境：装了 ezdxf + pywin32 的 CPython，**不是** Revit 内。
-  python dwg_to_json.py <图纸.dwg|dxf> [--out model_plan.json]
-  python dwg_to_json.py --selftest
+运行环境：本机 bim-dev venv（有 ezdxf + pywin32），**不是** Revit 内。
+  E:/AI-pyenvs/bim-dev/Scripts/python.exe dwg_to_json.py <图纸.dwg|dxf> [--out model_plan.json]
+  E:/AI-pyenvs/bim-dev/Scripts/python.exe dwg_to_json.py --selftest
 
 关于 DWG 读取（重要）：
   ezdxf 只能读 DXF（文本），**读不了二进制 DWG**（R2000+ 都是二进制）。
   真实图纸多为 AC1032(R2018+) 等二进制 DWG，AutoCAD 2010 也打不开新格式。
   所以本脚本对二进制 DWG 自动走"转 DXF 再读"的后端（按优先级回退）：
-    1) ODA File Converter（命令行，免费、无需激活；推荐。默认在 Program Files
-       下找，也可用环境变量 BIMTOOLKIT_ODA 直接指到 exe）
+    1) ODA File Converter（命令行，免费、无需激活；推荐，已落地到
+       E:/bim-toolkit/_tools/ODA/app/ODAFileConverter.exe）
     2) AutoCAD COM（仅能开到自身版本，老 DWG 才有用；AC1032 打不开）
     3) ZWCAD COM（中望 CAD；用户已说明无激活码、非长久之计，仅作兜底）
   都没装上时给出明确指引：先用任意 CAD / ODA File Converter 把图纸另存为
@@ -125,7 +125,7 @@ def _oda_convert(dwg_path, dxf_path):
     """用 ODA File Converter 命令行批量转换。免费、无需激活，推荐后端。"""
     exe = None
     for cand in (
-        os.environ.get("BIMTOOLKIT_ODA", u""),
+        r"E:/bim-toolkit/_tools/ODA/app/ODAFileConverter.exe",
         r"C:\Program Files\ODAFileConverter\ODAFileConverter.exe",
         r"C:\Program Files (x86)\ODAFileConverter\ODAFileConverter.exe",
     ):
@@ -135,7 +135,7 @@ def _oda_convert(dwg_path, dxf_path):
     if exe is None:
         import glob as _g
         for pat in (r"C:\Program Files\ODAFileConverter*\ODAFileConverter.exe",
-                    os.path.expanduser(u"~/AppData/Local/Programs/ODAFileConverter*/ODAFileConverter.exe")):
+                    r"E:/bim-toolkit/_tools/ODA*/app/ODAFileConverter.exe"):
             hits = _g.glob(pat)
             if hits:
                 exe = hits[0]
@@ -144,8 +144,7 @@ def _oda_convert(dwg_path, dxf_path):
         import shutil as _s
         exe = _s.which("ODAFileConverter.exe") or _s.which("ODAFileConverter")
     if exe is None:
-        raise RuntimeError("未找到 ODA FileConverter.exe（请先安装 ODA File Converter，"
-                             u"或把环境变量 BIMTOOLKIT_ODA 指到它的 exe）")
+        raise RuntimeError("未找到 ODA FileConverter.exe（请先安装 ODA File Converter，或确认 E:/bim-toolkit/_tools/ODA/app/ODAFileConverter.exe 存在）")
     # v2.12: 单文件隔离转换。旧版把 dwg 所在整个目录喂给 ODA 批转——实测
     # 16 个 DWG（多个 5MB 级）120s 超时跑不完 + .dwl 锁干扰，全线失败。
     # 改为把目标 DWG 复制进独立临时目录，转完取回（实测 1.2s/个）。
@@ -307,6 +306,19 @@ def _explode_insert(iref, out, blk_map, ctx, depth=0, path=(),
                         "layer": _layer_of(e2.dxf.layer),
                         "handle": e2.dxf.handle,
                         "closed": closed, "points": pts}
+            elif t2 == "SOLID":
+                # SOLID = 实心填充四边形。天正的柱符号块（实测 _FZH）里就是一个
+                # 1x1mm 的 SOLID，靠 insert 的 xscale/yscale 放大成真实柱截面
+                # （实测 r6: 240x240；r2: 400x400 / 300x400 / 300x500）。
+                # 以前这里不处理 SOLID，缩放后的轮廓被丢掉，只剩一个插入点
+                # ——于是柱既量不到尺寸、也拿不到截面。
+                # 顶点顺序是 vtx0,vtx1,vtx3,vtx2（DXF SOLID 的边是 0-1-3-2-0）。
+                pts = [_xf(_pt(getattr(e2.dxf, "vtx%d" % i)), *acc)
+                       for i in (0, 1, 3, 2)]
+                ent2 = {"type": "lwpolyline",
+                        "layer": _layer_of(e2.dxf.layer),
+                        "handle": e2.dxf.handle,
+                        "closed": True, "points": pts}
             if ent2 is not None:
                 ent2["src_block"] = name
                 ent2["exploded"] = True
@@ -317,8 +329,94 @@ def _explode_insert(iref, out, blk_map, ctx, depth=0, path=(),
     ctx.blocks_done += 1
 
 
-def read_dwg(path, explode_blocks=True):
+# --------------------------------------------------------------------------
+# v2.14: 图框检测（Task #33 实测结论的产品化）
+# 一张 DWG 并排画 N 张子图（各层平面+立面+剖面+详图），翻模一直把它们
+# 全叠进同一楼层。9 张真图实测：图框 = 闭合轴对齐多段线（块引用全语料 0 命中），
+# 住宅语料 93% 大簇有框、37 个平面图名 36 个恰落 1 框、去重后框互不重叠 0 对。
+# 图框多画在标题层（PUB_TITLE 等），恰是注释过滤器要滤掉的关键字——
+# 所以框检测必须放在注释过滤【之前】，检测到框就旁路输出、不进 entities。
+# --------------------------------------------------------------------------
+_FRAME_MIN_SHORT_MM = 20000.0    # 短边下限（A3@1:100 ≈ 42x30m；20m 兜小档）
+_FRAME_MAX_LONG_MM = 300000.0    # 长边上限（再大是总图外框）
+
+
+def _frame_rect_of(e):
+    u"""闭合轴对齐多段线 → (x0, y0, x1, y1)；尺寸落在图框区间才返回，否则 None。
+
+    判定与 _tools/probe_title_frames.py 完全同款（去重前的单框判定）：
+    显式闭合点去重后 4~12 顶点、每条边水平或垂直（1mm 容差）、
+    短边 20~300m（超长边只挡 >300m 的总图框）。
+    """
+    try:
+        if not bool(getattr(e, "is_closed", False)):
+            return None
+        pts = [(float(p[0]), float(p[1])) for p in e.get_points("xy")]
+    except Exception:
+        return None
+    if len(pts) < 4:
+        return None
+    q = []
+    for p in pts:
+        if not q or abs(p[0] - q[-1][0]) > 0.01 or abs(p[1] - q[-1][1]) > 0.01:
+            q.append(p)
+    if len(q) > 1 and abs(q[0][0] - q[-1][0]) <= 0.01 \
+            and abs(q[0][1] - q[-1][1]) <= 0.01:
+        q.pop()
+    if len(q) < 4 or len(q) > 12:
+        return None
+    for i in range(len(q)):
+        x1, y1 = q[i]
+        x2, y2 = q[(i + 1) % len(q)]
+        if abs(x2 - x1) > 1.0 and abs(y2 - y1) > 1.0:
+            return None
+    xs = [p[0] for p in q]
+    ys = [p[1] for p in q]
+    rect = (min(xs), min(ys), max(xs), max(ys))
+    short_ = min(rect[2] - rect[0], rect[3] - rect[1])
+    long_ = max(rect[2] - rect[0], rect[3] - rect[1])
+    if short_ < _FRAME_MIN_SHORT_MM or long_ > _FRAME_MAX_LONG_MM:
+        return None
+    return rect
+
+
+def _dedup_frames(frames):
+    u"""双线框去重（1m 网格键，内外边差 5~10mm）+ 嵌套保最外（500mm 容差）。"""
+    seen = {}
+    for fr in frames:
+        r = fr["rect"]
+        key = (int(round(r[0] / 1000.0)), int(round(r[1] / 1000.0)),
+               int(round(r[2] / 1000.0)), int(round(r[3] / 1000.0)))
+        if key not in seen:
+            seen[key] = fr
+    out = []
+
+    def _contains(big, small):
+        return (big["rect"][0] - 500.0 <= small["rect"][0]
+                and big["rect"][1] - 500.0 <= small["rect"][1]
+                and small["rect"][2] <= big["rect"][2] + 500.0
+                and small["rect"][3] <= big["rect"][3] + 500.0)
+
+    for fr in sorted(seen.values(),
+                     key=lambda fr: -((fr["rect"][2] - fr["rect"][0])
+                                      * (fr["rect"][3] - fr["rect"][1]))):
+        if not any(_contains(b, fr) for b in out):
+            out.append(fr)
+    return out
+
+
+def read_dwg(path, explode_blocks=True, texts_out=None, frames_out=None):
     """读 DWG/DXF → (layers, blocks, entities)。二进制 DWG 自动转 DXF。
+
+    v2.13: texts_out 传一个 list，则把图面文字（TEXT/MTEXT）以
+    {"text","x","y","layer","handle"} 追加进去。**不传就完全保持原行为** ——
+    read_dwg 有 40 个调用点全在解 5 元组，改返回宽度会一片全断。
+    文字单独收、不进 entities：它是"门窗编号在哪"的证据，
+    而不是可建构件，混进 entities 会污染分类。
+
+    v2.14: frames_out 同理——图框矩形（闭合轴对齐多段线，20~300m）以
+    {"rect":[x0,y0,x1,y1],"layer"} 追加。检测先于注释过滤（图框恰画在
+    PUB_TITLE 这类会被滤掉的层），检测到框的多段线不再进 entities。
 
     v2.11: explode_blocks=True 时把 INSERT 递归炸开为世界坐标线段
     （含开启弧的门块不炸——它们以 insert 实体按块名/图层规则建模）。
@@ -365,14 +463,32 @@ def read_dwg(path, explode_blocks=True):
 
     entities = []
     msp = doc.modelspace()
+    # 空壳闸门用：先记下 modelspace 的原始图元数，好把"转换失败产出空 DXF"
+    # 和"图有东西但被我们的规则全滤掉了"分开报 —— 这两种情况的处置方完全不同，
+    # 而以前都只表现为"没找到墙"。
+    raw_msp = 0
+    try:
+        raw_msp = sum(1 for _ in msp)
+    except Exception:
+        raw_msp = -1
     xctx = _ExplodeCtx()
     skipped_ann = 0
     skipped_short = 0
+    frames_raw = []
     for e in msp:
         t = e.dxftype()
         handle = e.dxf.handle if hasattr(e.dxf, "handle") else ""
         layer = e.dxf.layer
         lu = layer.upper()
+        # v2.14: 图框检测必须先于注释过滤——图框恰画在 PUB_TITLE 这类
+        # 含 TITLE 关键字的层，过滤之后就再也看不到了。命中框的多段线
+        # 旁路输出、不进 entities（它是分组证据，不是可建几何）。
+        if t in ("LWPOLYLINE", "POLYLINE"):
+            fr = _frame_rect_of(e)
+            if fr is not None:
+                frames_raw.append({"rect": [fr[0], fr[1], fr[2], fr[3]],
+                                   "layer": layer})
+                continue
         if any(kw in lu for kw in _ANNOTATION_KW):
             skipped_ann += 1
             continue
@@ -414,26 +530,78 @@ def read_dwg(path, explode_blocks=True):
             # v2.11: 非门块递归炸开（墙/家具等块内几何入模型空间坐标系）
             if explode_blocks and not is_door_block:
                 _explode_insert(e, entities, _blk_map, xctx)
-        # 其它图元（ARC/TEXT/DIMENSION 等）暂不纳入翻模，避免噪声
+        elif t in ("TEXT", "MTEXT") and texts_out is not None:
+            # 门窗编号（M0921 / C1515 / M1）是文字，不是几何。真图实测：
+            # r4 有 722 条编号样式文字、覆盖 72% 的门窗 INSERT，
+            # 而编号本身就按分米编码洞口尺寸（M0921 = 900x2100）。
+            try:
+                if t == "TEXT":
+                    txt = e.dxf.text or u""
+                    pos = e.dxf.insert
+                else:
+                    txt = e.plain_text() if hasattr(e, "plain_text") else e.text
+                    pos = e.dxf.insert
+                txt = (u"%s" % txt).strip()
+                if txt:
+                    texts_out.append({"text": txt, "layer": layer,
+                                      "handle": handle,
+                                      "x": float(pos.x), "y": float(pos.y)})
+            except Exception:
+                pass
+        # 其它图元（ARC/DIMENSION 等）暂不纳入翻模，避免噪声
     if skipped_ann or skipped_short:
         sys.stderr.write("[dwg_to_json] 过滤: %d 注释图层 + %d 碎线(<%smm)\n"
                          % (skipped_ann, skipped_short, _MIN_LINE_MM))
+    if frames_out is not None:
+        frames_out.extend(_dedup_frames(frames_raw))
+        if frames_out:
+            sys.stderr.write("[dwg_to_json] 图框: %d 个（去重后，20~300m 闭合轴对齐）\n"
+                             % len(frames_out))
     if explode_blocks:
         sys.stderr.write("[dwg_to_json] v2.11 块炸开: %d 实体 / %d 块实例"
                          " (上限 %d, 截断 %d)\n"
                          % (xctx.n, xctx.blocks_done, xctx.max_n,
                             xctx.skipped_capped))
+    if not entities:
+        try:
+            src_kb = os.path.getsize(path) // 1024
+        except Exception:
+            src_kb = 0
+        if raw_msp == 0:
+            raise RuntimeError(
+                u"转换结果里一个图元都没有（源文件 %s，%d KB，modelspace 空）。\n"
+                u"这几乎一定是 DWG→DXF 转换产出了空壳，而不是这张图没东西 —— "
+                u"已知 LibreDWG(dwg2dxf) 在建筑图上会这样：退出码 0、DXF 格式合法、"
+                u"块表上千条，但块内实体为 0；同样 6 张图用 ODA 能转出 3 千~3 万个图元。\n"
+                u"处理：改用 ODA File Converter，或在 AutoCAD 里另存为 DXF(R2000+) "
+                u"后再翻。" % (os.path.basename(path), src_kb))
+        if raw_msp > 0:
+            raise RuntimeError(
+                u"图里有 %d 个图元，但全部被翻模规则滤掉了"
+                u"（注释图层 %d、短线 %d）。\n"
+                u"这是分类规则没覆盖到本图的图层命名，不是图纸的问题 —— "
+                u"请对照本图图层名检查 mapping_rules.csv 的关键字。"
+                u"\n本图图层：%s" % (
+                    raw_msp, skipped_ann, skipped_short,
+                    u", ".join(layers[:25])))
     return layers, blocks, entities, skipped_ann, skipped_short
 
 
 def convert(path, out_path=None, keep_dxf=False):
-    layers, blocks, entities, skipped_ann, skipped_short = read_dwg(path)
+    texts = []
+    frames = []
+    layers, blocks, entities, skipped_ann, skipped_short = read_dwg(
+        path, texts_out=texts, frames_out=frames)
     plan = {
         "source": os.path.basename(path),
         "format": "dwg" if path.lower().endswith(".dwg") else "dxf",
         "layers": layers,
         "blocks": blocks,
         "entities": entities,
+        # 门窗编号靠它定位与解码尺寸（见 bimconv_rules.apply_opening_codes）
+        "texts": texts,
+        # v2.14: 图框矩形——Stage 4 按框路由的分组证据（Task #33 实测产品化）
+        "frames": frames,
         "skipped_annotation": skipped_ann,
         "skipped_short_lines": skipped_short,
     }
@@ -481,6 +649,16 @@ def _selftest():
     dblk.add_point((0, 0))
     dblk.add_arc((0, 0), radius=900, start_angle=0, end_angle=90)  # 门扇开启弧
     msp.add_blockref("DOOR-S", (2500, 0, 0), dxfattribs={"layer": "DOOR"})
+    # v2.14: 图框——84x59m 闭合轴对齐多段线，画在会被注释过滤器滤掉的
+    # PUB_TITLE 层（真语料实测图框恰在标题层），验证"检测先于过滤"。
+    msp.add_lwpolyline([(0, 0), (84000, 0), (84000, 59000), (0, 59000)],
+                       close=True, dxfattribs={"layer": "PUB_TITLE"})
+    # 双线框内边（差 10mm）：去重后应只剩 1 个框
+    msp.add_lwpolyline([(10, 10), (83990, 10), (83990, 58990), (10, 58990)],
+                       close=True, dxfattribs={"layer": "PUB_TITLE"})
+    # 图名文字（框内）
+    msp.add_text(u"三层平面图 1:100", dxfattribs={"layer": "PUB_TEXT"}
+                 ).set_placement((70000, 2000))
     d.saveas(dxf)
 
     out, plan = convert(dxf)
@@ -497,7 +675,20 @@ def _selftest():
     assert door_ents and door_ents[0].get("has_arc") is True, "door insert missing has_arc tag"
     assert not col_ents[0].get("has_arc"), "column insert must NOT have has_arc tag"
     assert "GRID" in plan["layers"] and "COL-A" in plan["blocks"]
-    print("[selftest] dwg_to_json OK: %d entities (%s)" % (len(plan["entities"]), by_type))
+    # v2.14: 图框旁路输出（TITLE 注释层挡不住），双线去重后恰 1 个；
+    # 框不进 entities；图名文字进 texts
+    frames = plan.get("frames") or []
+    assert len(frames) == 1, "frame dedup failed: %d" % len(frames)
+    fr = frames[0]["rect"]
+    assert abs(fr[0]) < 1 and abs(fr[1]) < 1 and abs(fr[2] - 84000) < 1 \
+        and abs(fr[3] - 59000) < 1, "frame rect wrong: %s" % (fr,)
+    assert all(e.get("layer") != "PUB_TITLE" for e in plan["entities"]), \
+        "frame polyline leaked into entities"
+    texts = plan.get("texts") or []
+    assert any(u"三层平面图" in (t.get("text") or u"") for t in texts), \
+        "title text missing in texts[]"
+    print("[selftest] dwg_to_json OK: %d entities (%s) frames=%d" % (
+        len(plan["entities"]), by_type, len(frames)))
     print("[selftest] wrote %s" % out)
     return True
 

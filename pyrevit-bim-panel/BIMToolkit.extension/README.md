@@ -1,11 +1,16 @@
 # BIMToolkit — AI 驱动的 Revit 自动化工具集
 
-> pyRevit 扩展 | Revit 2019+ | IronPython 2.7 + CPython 3 双引擎 | 19 个功能按钮
+> pyRevit 扩展 | Revit 2019 | IronPython 2.7 | 14 个按钮（收敛中，目标 8 入口）
+
+**引擎说明（2026-10-07 校正）**：此前这里写"IronPython 2.7 + CPython 3 双引擎"。
+实测没有任何按钮声明引擎（零 `config.yml`、零 `#! python3`），pyRevit 因此一律用
+默认引擎 **IronPython 2.7**；`CPY3123` 引擎装了但没有按钮在用。全部代码按
+IronPython 2.7 语法编写并由真 `ipy.exe` 做编译门禁（`tools/ipy_selfcheck.py`）。
 
 ## 项目定位
 
 面向建筑施工企业的 **AI + BIM 自动化** 插件，将 AI 大模型能力深度集成到 Revit 工作流中，
-覆盖从「图纸识别 → 模型生成 → 规范审查 → 施工方案 → 自动出图」的全链路自动化。
+覆盖从「图纸识别 → 模型生成 → 规范审查 → 工程量 → 4D 进度关联」的全链路自动化。
 
 **与商业产品（如 CONCETTO）的差异化优势**：
 - 本地部署，数据不出企业内网
@@ -28,33 +33,39 @@
 | **楼层清点** | 按楼层统计构件分布 | Level 参数关联 |
 | **BIM 体检** | 模型健康度评估（警告/族/参数化） | 5维评分体系 0~100分 |
 | **DWG翻模** | DWG 图纸导入并识别翻模 | DXF 解析 + 几何映射 + 多路径 Python 发现 |
-| **翻模体检** | 翻模结果质量检查 | 几何偏差 + 属性完整性 |
 | **进度关联** | 构件与施工进度计划关联 | 4D 模拟数据准备 + WinForms TaskDialog |
-| **MCP Bridge** | 外部 AI 控制器与 Revit 通信 | Socket 桥接 + JSON 协议 |
+| **MCP Bridge** | 外部 AI 控制器与 Revit 通信 | Socket 桥接 + JSON 协议 + 三档命令策略 |
 | **配置建模** | 选 `buildings/*.yaml` 配方，配置驱动自动建模 | 干跑校验 → 清场确认 → genbuild 引擎（CPython 子进程） |
-| **Create Villa** | 参数化别墅模型生成 | 动态标高发现 + 建筑参数 JSON → Revit 构件 |
+
+> 2026-10-07 移除：`翻模体检`（它读的 `*_report.json` 全仓没有生产者，且会照
+> ElementId 盲删当前文档构件）、`Create Villa`（与「一键建模」重合且尺寸硬编码，
+> `NewFootPrintRoof` 用的是 CPython 元组解包写法，在 IronPython 2.7 下大概率整体回滚）。
 
 ### Tab 2: AI 智建（核心差异化功能）
 
 | 按钮 | 功能 | 技术要点 |
 |------|------|----------|
 | **一键建模** | 读取 building_params.json，自动创建完整别墅模型 | model_builder.py 引擎：标高/墙/板/坡屋顶/门窗/阳台 |
-| **一键演示** | 全流程演示：建模→体检→规范审查→出图→汇总报告 | 4步串联 + 综合评分报告 |
-| **规范审查** | 5类国标规范自动审查 + 评分 | 消防/抗震/结构/面积/节能 |
-| **施工方案** | 7阶段施工方案自动生成 | 工期/设备/质量检查点 |
+| **规范审查** | 5类国标规范自动审查 + 评分 | 消防/抗震/结构/面积/节能；三态（未检查项不伪装成通过） |
 | **工程量统计** | 工程量清单 + 造价估算 | 混凝土/模板/钢筋 |
 | **智能出图** | 自动创建平面图视图（立面图受限） | ViewPlan.Create；立面图 API 在 Revit 2019+IronPython 不兼容 |
-| **自动标注** | 墙/门/窗尺寸自动标注 | Reference + NewDimension |
+
+> 2026-10-07 移除：`一键演示`（另三个按钮的复制粘贴，且缺"模型已有构件"检查，
+> 二次点击会把同一栋楼叠上去）、`施工方案`（7 阶段数组是硬编码的，docstring 承诺的
+> TXT 导出并不存在）、`自动标注`（每类只出一条水平尺寸链，非共线构件整链失败）。
+>
+> 面板名 `AI 智建` 目前名不副实：留下的 4 个里只有「规范审查」真调用模型，
+> 且规则引擎负责判定、AI 只出解释。改名与合并见 `docs/收敛方案-19按钮到8入口.md`。
 
 ---
 
 ## 技术栈
 
-- **宿主**: pyRevit (IronPython 2.7 + CPython 3 双引擎)
+- **宿主**: pyRevit 6.5.5（含 Revit 2019 支持的最后一支；pyRevit 7.0 已砍 Revit <2021）
+- **引擎**: IronPython 2.7（没有任何按钮声明引擎，故一律走默认引擎）
 - **API**: Autodesk Revit API 2019
-- **AI**: DeepSeek API (OpenAI 兼容协议)
+- **AI**: DeepSeek API (OpenAI 兼容协议)，密钥只走环境变量 `DEEPSEEK_API_KEY`
 - **UI**: WinForms (TaskDialog/SaveFileDialog) — 避免 WPF 在 Revit 2019 legacy loader 崩溃
-- **兼容**: IronPython 2.7 / CPython 3 双引擎
 
 ## 目录结构
 
@@ -75,14 +86,11 @@ BIMToolkit.extension/
 │   │   ├── AI 指令.pushbutton/
 │   │   ├── 一键统计.pushbutton/
 │   │   └── ...
-│   └── AI 智建.panel/            # 7个核心差异化按钮
+│   └── AI 智建.panel/            # 4 个按钮（原 7 个，见上方移除说明）
 │       ├── 一键建模.pushbutton/
-│       ├── 一键演示.pushbutton/
 │       ├── 规范审查.pushbutton/
-│       ├── 施工方案.pushbutton/
 │       ├── 工程量统计.pushbutton/
-│       ├── 智能出图.pushbutton/
-│       └── 自动标注.pushbutton/
+│       └── 智能出图.pushbutton/
 ```
 
 ## 核心设计
@@ -132,31 +140,36 @@ buildings/*.yaml（层/墙段/开洞/板/楼梯/屋顶/栏杆/材质）
 > 与 `DWG翻模` 把 ezdxf 的活丢给外部 CPython 是同一套路。
 > 路径由按钮目录下的 `genbuild_config.json` 指定。
 
-### 一键演示（全链路演示流水线）
+### 全链路演示流水线（原「一键演示」按钮，2026-10-07 移除）
+
+> 移除原因不是流程没价值，而是它把下面几个按钮的逻辑**复制**了一份（出图那段
+> 是手抄的），且缺"模型已有构件"检查 —— 第二次点击会把同一栋楼叠上去，而叠墙
+> 正是 `DWG翻模` 记录过的崩溃前因。演示时按下面顺序手动点即可。
 
 ```
-step1: model_builder.build_model()  → 从 JSON 生成完整别墅模型
+step1: 一键建模                    → model_builder.build_model() 从 JSON 生成别墅模型
     ↓
-step2: bimhealth 扫描              → 模型健康度评分（5维/100分制）
+step2: BIM 体检                    → bimhealth 扫描（警告/族/参数化 + 健康分）
     ↓
-step3: standards_checker.run_review → 5类国标规范审查
+step3: 规范审查                    → standards_checker.run_review（国标判定 + AI 解释）
     ↓
-step4: ViewPlan.Create              → 自动创建楼层平面图
+step4: 智能出图                    → ViewPlan.Create 建楼层平面图
     ↓
-汇总报告: 建模/体检/审查/出图 四项指标一屏展示
+step5: 工程量统计 / 进度关联       → 工程量与造价参考值、4D 步骤数据
 ```
 
-### 规范审查（5维评分）
+### 规范审查（实际检查项）
 
 ```
-提取模型参数（层数/高度/面积/墙厚）
+提取模型参数（标高数/楼层数/高度/层高列表/墙厚/面积估算）
     ↓
-5类检查:
-  - 消防 (GB50016): 耐火等级/防火分区/疏散距离
-  - 抗震 (GB50011): 设防烈度/结构类型/高宽比
-  - 结构 (GB50010): 保护层厚度/配筋率
-  - 面积 (GBT50353): 建筑面积计算规则
-  - 节能 (GB50176): 体形系数/窗墙比
+5类检查 —— 只列代码真正判的东西，不写没实现的条目：
+  - 消防 (GB50016): 建筑高度限值、逐层层高限值、是否设了耐火极限参数
+  - 抗震 (GB50011): 抗震限高、平均层高偏大时提示验算层间刚度
+  - 结构 (GB50010): 墙厚最小值、楼板跨厚比提示（info）
+  - 面积 (GBT50353): 外包尺寸估算的总建筑面积（info，非按规范计算规则）
+  - 节能 (GB50176): 需 standards 里有 min_wall_insulation_mm 才会判；
+                     当前该值为 0 ⇒ 明确报「未检查」，不再静默缺席
     ↓
 加权评分 0~100 → 等级（优秀/良好/及格/需整改）
 ```
@@ -171,7 +184,7 @@ step4: ViewPlan.Create              → 自动创建楼层平面图
 6. **IronPython FilteredElementCollector** — `.Count` 属性不可用，必须 `ToElements()` 后 `len()`
 7. **ViewSection API 在 Revit 2019 + IronPython 2.7 完全不可用** — 尝试了 5 种方案（直接调用、clr.GetClrType、InvokeMember 反射、ElevationMarker、CreateSection+Transform），均因 IronPython 对 CLR 静态方法的类型解析 bug 或 .NET 层 StandardError 而失败。最终降级为仅创建平面图，立面图提示用户手动创建。**升级至 CPython3 引擎或 Revit 2022+ 可解决**。
 8. **WPF forms.alert() 在 Revit 2019 legacy loader 崩溃** — 所有 UI 对话框改用 WinForms TaskDialog；文件保存改用 System.Windows.Forms.SaveFileDialog
-9. **硬编码 ElementId 跨文件失效** — Create Villa 改为动态标高发现（按 elevation 排序取前两个）
+9. **硬编码 ElementId 跨文件失效** — 改为按 elevation 排序动态发现标高（该写法最早出自 Create Villa，该按钮已于 2026-10-07 移除，教训保留）
 10. **硬编码 Python 路径导致 DWG翻模失败** — 增加多路径 fallback：`.workbuddy` → `D:\Python` → `C:\Python39` → 系统 PATH
 
 ## 已知限制
@@ -179,13 +192,13 @@ step4: ViewPlan.Create              → 自动创建楼层平面图
 | 功能 | 限制 | 原因 | 解决方案 |
 |------|------|------|----------|
 | 智能出图 — 立面图 | 无法自动创建立面视图 | ViewSection.CreateSection 在 Revit 2019 + IronPython 2.7 下抛出 StandardError | 手动在项目浏览器创建立面；或切换 pyRevit 至 CPython3 引擎 |
-| 自动标注 | 仅支持基本墙标注 | 复杂墙型（幕墙/叠层）几何引用不一致 | 后续版本增加墙型适配 |
+| 尺寸标注 | **暂无入口**（原「自动标注」按钮已移除） | 每类只出一条水平尺寸链、强制 X 排序，非共线构件整链失败 | 需要时按轴线分组重做，约 3 人日 |
 
 ## 代码质量改进（v1.1）
 
 ### 架构规范化
 - **统一 main() 模式**：所有脚本逻辑封装在 `main()` 函数，避免模块级执行副作用
-- **动态资源发现**：Create Villa 动态查找标高、DWG翻模多路径 Python 发现
+- **动态资源发现**：按 elevation 排序动态查找标高、DWG翻模多路径 Python 发现
 - **UI 兼容性加固**：全面替换 WPF → WinForms，确保 Revit 2019 legacy loader 稳定运行
 
 ### 安全性提升
@@ -224,7 +237,7 @@ step4: ViewPlan.Create              → 自动创建楼层平面图
 
 - 建筑施工企业 BIM 中心：批量建模、规范审查、工程量统计
 - 设计院：AI 辅助建模、自动出图标注
-- 施工方：施工方案生成、进度关联
+- 施工方：进度关联（4D 数据准备）
 - 求职作品集：展示 AI + BIM 全链路自动化能力
 
 ---

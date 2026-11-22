@@ -27,13 +27,38 @@ except Exception:
 
 
 def all_model_elements(doc):
-    u"""全部非类型的模型/注释构件收集器（便于统一统计）。
+    u"""全部非类型的模型/注释构件（便于统一统计）。
 
-    注意：WhereElementIsNotElementType 是 IronPython 扩展方法，在 pyRevit 的
-    CPython 引擎下不一定可用；改用引擎无关的 ElementIsElementTypeFilter(True)。
+    ElementIsElementTypeFilter 的构造参数是 **invert**，不是"要不要类型"：
+      True  = 反转 = 只放行实例   （实测等价于 WhereElementIsNotElementType()）
+      False = 不反转 = 只放行族类型（实测等价于 WhereElementIsElementType()）
+
+    2026-10-07 在真机（仙湖别墅.rvt）上量过，别再凭参数名推断：
+      OfCategory(OST_Walls) 全量 53；Filter(True) -> 18（类名 Wall），
+      Filter(False) -> 35（类名 WallType）；WhereElementIsNotElementType() -> 18。
     """
     return DB.FilteredElementCollector(doc).WherePasses(
         DB.ElementIsElementTypeFilter(True))
+
+
+def stats_calibration_note(doc):
+    u"""统计口径自检：实例数与族类型数同量级时返回告警文案，否则 None。
+
+    这是运行时探针（真机上一眼看得见）；正确性由 tests/ironpython_harness.py
+    的「收集器口径」断言保证，两者不可互相替代。
+    """
+    try:
+        fec = DB.FilteredElementCollector
+        n_inst = len(list(fec(doc).WherePasses(
+            DB.ElementIsElementTypeFilter(True)).ToElements()))
+        n_type = len(list(fec(doc).WherePasses(
+            DB.ElementIsElementTypeFilter(False)).ToElements()))
+    except Exception:
+        return None
+    if n_inst and n_inst <= max(3, n_type // 20):
+        return (u"⚠️ 统计口径可疑：实例数 %d 与族类型数 %d 同量级，"
+                u"数量可能取自族类型而非构件。" % (n_inst, n_type))
+    return None
 
 
 def element_level_name(el):

@@ -4,7 +4,7 @@ u"""收割本机所有可用的**真屋面**，汇总成一个屋面库 roof_lib
 来源（实测有真屋面的）：
   Autodesk 样例：rac_basic(2) / rac_advanced(6) / Technical_school(6) /
                  Arch Link(6) / Golden_Nugget建筑(20)
-  自有工程      ：桌面\\自有工程\\项目1.rvt(2)
+  用户自有工程 ：桌面\\自有工程\\项目1.rvt(2)
 合计 42 个 RoofBase。
 
 安全：

@@ -106,10 +106,10 @@ def build_prompts(report, doc_title=None, max_items=None):
     lines = []
     lines.append(u"## 模型概况")
     lines.append(u"- 文档: %s" % (doc_title or u"(未提供)"))
-    lines.append(u"- 层数: %s" % params.get(u"total_floors", u"?"))
-    lines.append(u"- 建筑高度(mm): %s" % params.get(u"building_height_mm", u"?"))
-    lines.append(u"- 墙厚(mm): %s" % params.get(u"wall_thickness_mm", u"?"))
-    lines.append(u"- 估算面积(m2): %s" % params.get(u"total_area_sqm", u"?"))
+    lines.append(u"- 层数: %s" % (params.get(u"total_floors") or u"?"))
+    lines.append(u"- 建筑高度(mm): %s" % (params.get(u"building_height_mm") or u"?"))
+    lines.append(u"- 墙厚(mm): %s" % (params.get(u"wall_thickness_mm") or u"?"))
+    lines.append(u"- 估算面积(m2): %s" % (params.get(u"total_area_sqm") or u"?"))
     lines.append(u"")
     lines.append(u"## 规则引擎的判定结果（不可更改）")
     lines.append(u"- 综合评分: %s (%s)" % (report.get(u"score"),

@@ -30,12 +30,13 @@ STYLE = {
     u"BIM 体检.pushbutton": (u"#c62828", u"H"),
     u"进度关联.pushbutton": (u"#00838f", u"4"),
     u"DWG翻模.pushbutton": (u"#5e35b1", u"D"),
-    u"写入诊断.pushbutton": (u"#455a64", u"W"),
-    u"翻模体检.pushbutton": (u"#00897b", u"Q"),
     u"AI 指令.pushbutton": (u"#6d4c41", u"A"),
     u"MCP Bridge.pushbutton": (u"#0277bd", u"M"),
-    u"Create Villa.pushbutton": (u"#7b1fa2", u"V"),
     u"配置建模.pushbutton": (u"#00695c", u"G"),
+    # 2026-10-07 清掉三个已不存在的按钮：写入诊断（S8 因点击即崩退役）、
+    # 翻模体检 与 Create Villa（收敛方案阶段 1 移除）。
+    # 残留键不会报错（只会生成到不存在的目录上被跳过），但会让"还有哪些按钮"
+    # 这件事再次说谎。
 }
 DEFAULT_COLOR = u"#37474f"
 

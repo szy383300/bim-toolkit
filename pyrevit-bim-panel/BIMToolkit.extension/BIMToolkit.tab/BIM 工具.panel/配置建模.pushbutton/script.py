@@ -31,9 +31,7 @@ out = script.get_output()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "genbuild_config.json")
-# 引擎与配方在开发仓库里、不在扩展目录内，所以按钮部署后无法从 __file__ 推出仓库根：
-# 必须由 genbuild_config.json 的 repo_root 指路。留空时主流程给出明确的填法提示。
-DEFAULT_REPO = u""
+DEFAULT_REPO = r"E:\bim-toolkit"
 
 # genbuild 的退出码语义（与 genbuild/errors.py 对齐）
 EXIT_MEANING = {
@@ -203,11 +201,6 @@ def _wipe_categories(py, mcp_dir, log_path):
 def main():
     cfg = _load_config()
     repo = cfg[u"repo_root"]
-    if not repo:
-        _msg_box(u"还没配置 genbuild 仓库根目录。\n\n"
-                 u"编辑按钮目录下的 genbuild_config.json，把 repo_root 填成本机上含 "
-                 u"mcp/gen_build.py 与 buildings/ 的那个目录，保存后重新点按钮。")
-        return
     gen_build = os.path.join(repo, u"mcp", u"gen_build.py")
     recipes = os.path.join(repo, cfg[u"recipes_dir"])
 

@@ -28,6 +28,8 @@ if DB is None:
 from bimconv_geom import (MM_TO_FT, MIN_WALL_SEGMENT_LEN, MIN_WALL_TOTAL_LEN,
                           _num_ok, _xyz, _point_of)
 from bimconv_walls import _nearest_wall
+# 建墙走全仓唯一入口（守卫、逐段容错、接合抑制都在那里）。
+import element_factory as ef
 try:
     from bimlib import type_name
 except Exception:
@@ -81,21 +83,87 @@ def _cat_name(s):
         return u""
 
 
-def _column_symbol(doc, hint):
-    u"""找柱族类型（按类别名含「柱/column」筛选，退化时取任意 FamilySymbol 首枚）。"""
-    syms = [s for s in DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol).ToElements()
-            if u"\u67f1" in _cat_name(s) or "column" in _cat_name(s).lower()]
-    if not syms:
-        # 退化：取任意 FamilySymbol 首枚（仍可能不对，靠预览提示）
-        syms = list(DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol).ToElements())
+def _column_pool(doc):
+    u"""柱族类型池。
+
+    **必须用收集器级 OfCategory，不能按 `s.Category.Name` 里有没有"柱"筛。**
+    真机实测（仙湖别墅.rvt，2026-10-08）：`OfCategory(OST_Columns)` 能找到 3 个
+    柱符号（457x475 / 475x610 / 610x610），且这 3 个都在
+    `OfClass(FamilySymbol)` 返回的 266 个里；但对这 266 个做
+    `u"柱" in s.Category.Name` 筛，结果是 **0 个**。也就是说原来 bimconv_build
+    里那个按类别名筛的 `col_syms` 一直是空的——柱能建出来，靠的全是
+    `else all_syms` 那个错误兜底。把兜底拿掉而不修筛法，会让柱直接全部失败。
+
+    名字筛保留作补充（有的项目柱族类别名带"柱"但不在上面两个 BuiltInCategory 下）。
+    """
+    out = []
+    seen = set()
+    for bic in (getattr(DB.BuiltInCategory, "OST_Columns", None),
+                getattr(DB.BuiltInCategory, "OST_StructuralColumns", None)):
+        if bic is None:
+            continue
+        try:
+            for s in DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol) \
+                        .OfCategory(bic).ToElements():
+                if s.Id.IntegerValue not in seen:
+                    seen.add(s.Id.IntegerValue)
+                    out.append(s)
+        except Exception:
+            continue
+    try:
+        for s in DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol).ToElements():
+            if s.Id.IntegerValue in seen:
+                continue
+            try:
+                cn = s.Category.Name or u""
+            except Exception:
+                continue
+            if u"柱" in cn or "column" in cn.lower():
+                seen.add(s.Id.IntegerValue)
+                out.append(s)
+    except Exception:
+        pass
+    return out
+def pick_column_symbol(pool, hint):
+    u"""从柱族池里挑一个；池子为空返回 None。
+
+    **契约：pool 必须已经按类别筛过**（用 `_column_pool(doc)` 或
+    `bimconv_build` 里的 `col_syms`）。本函数不看类别，只看名字——
+    把未筛的 FamilySymbol 全集喂进来，它可能挑中一扇门。空池返回 None，
+    由调用方明确失败。
+
+    这里以前没有实现——柱类型选择散在 `bimconv_build.get_sym` 里，而它写着
+    `base = col_syms if col_syms else all_syms`：**没有柱族时退到"任意族类型
+    首枚"**，那会把一扇门当柱建。同一个洞 v2.9 已在门窗侧堵过（"不再用
+    all_syms 兜底——回退会把门建成窗/立柱，缺族就明确失败"），柱这条漏了。
+    而且兜底结果取决于收集器顺序、不可复现：真机实测 1733 根柱被静默统一
+    成 UC305x305x97 一根型钢，预览里根本没提。
+
+    hint 命中优先；否则偏好混凝土柱（施工图里的柱绝大多数是混凝土），
+    再退到按名字排序的首枚——排序是为了可复现。
+    """
+    syms = list(pool or [])
     if not syms:
         return None
     if hint:
+        hl = hint.lower()
         for s in syms:
-            if hint.lower() in type_name(s).lower():
+            if hl in type_name(s).lower():
                 return s
-    return syms[0]
+    concrete = [s for s in syms
+                if u"混凝土" in type_name(s) or "concrete" in type_name(s).lower()]
+    if concrete:
+        syms = concrete
+    return sorted(syms, key=lambda s: type_name(s).lower())[0]
 
+
+def column_symbol_name(doc, hint=u""):
+    u"""给预览用：这次翻模的柱会统一建成哪个类型；取不到返回 ""。"""
+    s = pick_column_symbol(_column_pool(doc), hint or u"")
+    try:
+        return to_text(type_name(s)) if s is not None else u""
+    except Exception:
+        return u""
 
 def _floor_type(doc, hint):
     u"""找楼板类型（hint 模糊匹配名字，无 hint 取第一个）。"""
@@ -133,8 +201,11 @@ def _create_grid(doc, plan):
 def _create_wall(doc, plan, level_id, wt, collect=None, curves=None):
     u"""墙：多段线逐段建墙；单条 LINE（天正常见）按一段直墙处理。
 
+    实际建墙交给 `element_factory`（全仓唯一 Wall.Create 调用点）。本函数只保留
+    翻模侧特有的三件事：坐标换算（`_xyz`，坏点在这里就抛）、闭合判定、
+    以及把建成的墙回填给 `collect` / `curves` 供门窗寄宿与后续接合判断。
+
     返回首段墙对象（整条墙线可能拆成多段，全部已建）。
-    collect/curves 用于收集墙对象与其曲线，供后续 Join 和门/窗寄宿。
     """
     e = plan["geom"]
     pts = e.get("points") or []
@@ -143,63 +214,50 @@ def _create_wall(doc, plan, level_id, wt, collect=None, curves=None):
         pts = [e["start"], e["end"]]
     if len(pts) < 2:
         raise Exception(u"墙至少需要 2 个点（当前点数不足），已跳过")
+
     elev = 0.0
-    created = []
-    seq = pts + [pts[0]] if e.get("closed") else pts
-    # 退化段（零长/近零/非有限）必须跳过：DB.Wall.Create 喂入退化或 NaN 曲线会触发
-    # Revit 原生崩溃（不可被 try/except 捕获，表现为「Revit 遇到了意外错误」闪退）。
-    # 先把所有点转成有限坐标（_xyz 遇坏点直接抛，由上层记为跳过），
-    # 再校验总长与逐段长度，NaN/inf 一律按「不合格」跳过，绝不喂给 Revit。
-    min_len = MIN_WALL_SEGMENT_LEN
-    p3 = [_xyz(q, elev) for q in seq]
-    total = 0.0
-    for i in range(len(p3) - 1):
-        d = p3[i].DistanceTo(p3[i + 1])
-        if d != d or d >= float('inf'):
-            raise Exception(u"墙含非有限坐标（NaN/inf），已跳过")
-        total += d
-    # 整条墙过短直接整条跳过（剔除退化/噪声短墙）
-    if total < MIN_WALL_TOTAL_LEN:
-        raise Exception(u"墙总长过短（< %g mm），已跳过"
-                        % (MIN_WALL_TOTAL_LEN / MM_TO_FT))
-    for i in range(len(p3) - 1):
-        if seq[i] == seq[i + 1]:
-            continue
-        pa, pb = p3[i], p3[i + 1]
-        d = pa.DistanceTo(pb)
-        if d != d or d >= float('inf') or d < min_len:
-            continue
-        curve = DB.Line.CreateBound(pa, pb)
-        # Revit 2019 没有 4 参静态 Wall.Create（探针实证：曲线重载只有 8 参
-        # 和 3 参无类型两种）。8 参形式（类型在前、楼层在后）是本机
-        # 「写入诊断」按钮实测可用的活例。高度：计划给了用计划值，
-        # 否则给 10ft（约 3m）缺省，避免 0 高墙。
-        h_ft = (plan["height"] * MM_TO_FT) if (plan.get("height") or 0) > 0 else 10.0
-        w = DB.Wall.Create(doc, curve, wt.Id, level_id, h_ft, 0.0, False, False)
-        # v2.8d: 翻模墙两端禁止自动接合。Revit 会在创建时对端点相触的墙自动
-        # 接合并清理转角（缩放/剪切剖面）——三崩实录里这是退化轮廓
-        # （BlendSection non-unique plane / FaultyAtoms SWall）与「墙重叠」
-        # 警告的发生器。接合纯属外观，安全优先；需要清理时用户手动「连接几何」。
-        try:
-            DB.WallUtils.DisallowWallJoinAtEnd(w, 0)
-            DB.WallUtils.DisallowWallJoinAtEnd(w, 1)
-        except Exception:
-            pass
-        if plan["height"] and plan["height"] > 0:
-            p = w.get_Parameter(DB.BuiltInParameter.WALL_USER_HEIGHT_PARAM)
-            if p:
-                p.Set(plan["height"] * MM_TO_FT)
-        created.append(w)
-        if collect is not None:
-            collect.append(w)
-        if curves is not None:
+    # 任何坐标必须先过 _xyz：它遇坏点直接抛，由上层记为「跳过」。
+    # 这是防 Revit 原生崩溃的第一道闸（第二道在工厂里，两道都要留着）。
+    p3 = [_xyz(q, elev) for q in pts]
+
+    segs, dropped = ef.segments_from_points(
+        p3, closed=bool(e.get("closed")),
+        min_len=MIN_WALL_SEGMENT_LEN, total_min=MIN_WALL_TOTAL_LEN)
+
+    # 高度：计划给了用计划值，否则给 10ft（约 3m）缺省，避免 0 高墙。
+    h_ft = (plan["height"] * MM_TO_FT) if (plan.get("height") or 0) > 0 else 10.0
+
+    created, failures = ef.create_walls(
+        doc, segs, level_id, wt.Id, h_ft,
+        suppress_join=True,
+        on_created=lambda w: _harvest(w, collect, curves))
+
+    if plan.get("height") and plan["height"] > 0:
+        # 与 Create 时传的高度同值，保留是沿用旧行为（复合结构/顶部约束在
+        # 部分样板下会吃掉构造高度，这里再显式写一次实例参数）。
+        for w in created:
             try:
-                curves.append((w, w.Location.Curve))
+                p = w.get_Parameter(DB.BuiltInParameter.WALL_USER_HEIGHT_PARAM)
+                if p:
+                    p.Set(plan["height"] * MM_TO_FT)
             except Exception:
                 pass
+
     if not created:
-        raise Exception(u"墙的所有线段均退化（零长/近零/非有限），已跳过")
+        raise Exception(u"墙的所有线段均退化或被拒绝，已跳过：%s"
+                        % ef.describe_failures(failures or dropped))
     return created[0]
+
+
+def _harvest(w, collect, curves):
+    u"""把建成的墙回填给调用方的收集器（门窗寄宿 / 曲线索引要用）。"""
+    if collect is not None:
+        collect.append(w)
+    if curves is not None:
+        try:
+            curves.append((w, w.Location.Curve))
+        except Exception:
+            pass
 
 
 def _create_column(doc, plan, level_id, sym):
@@ -528,7 +586,17 @@ def _create_door_window(doc, plan, level_id, sym, wall_index, cut=True):
     p = _point_of(e)
     if not p:
         raise Exception(u"门/窗缺少定位点，已跳过")
-    pt = _xyz(p, 0)
+    # v7.14.1：point 的第 3 元素（mm）才是定位 z——_xyz(p, 0) 原先把它整个
+    # 忽略，寄宿点恒落在 z=0；墙在非首层标高上时 3D 距离=层高，全部被
+    # 2000mm 上限拒收（桥侧 create_door_window 对非首层全灭的根因）。
+    # 平面图场景 point 无第 3 元素，行为不变（z=0）。
+    z_mm = 0.0
+    if len(p) > 2:
+        try:
+            z_mm = float(p[2])
+        except Exception:
+            z_mm = 0.0
+    pt = _xyz(p, z_mm)
     if not cut:
         # 不寄宿、不切洞：避免大批量布尔切孔把 Revit 拖崩；失败则跳过
         lvl = doc.GetElement(level_id)
@@ -541,8 +609,11 @@ def _create_door_window(doc, plan, level_id, sym, wall_index, cut=True):
                 sym.Activate()
         except Exception:
             pass
+        # 此重载的 pt.z 是相对楼落的偏移语义，不是绝对标高——归零，
+        # 防调用方把绝对标高传进来导致构件双重抬高
+        pt0 = DB.XYZ(pt.X, pt.Y, 0.0)
         return doc.Create.NewFamilyInstance(
-            pt, sym, lvl, DB.Structure.StructuralType.NonStructural)
+            pt0, sym, lvl, DB.Structure.StructuralType.NonStructural)
     if wall_index:
         buckets, key = wall_index
         best, best_c, best_d = _nearest_wall(pt, buckets, key)

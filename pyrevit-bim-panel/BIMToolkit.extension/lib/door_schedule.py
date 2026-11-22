@@ -28,8 +28,15 @@ import json
 
 _KIND_MARK = ("门", "窗")
 _SIZE_RE = re.compile(r"(\d{3,4})\s*[xX×\*]\s*(\d{3,4})")
-_CODE_RE = re.compile(r"^[MT] ?[C]?\s*[-‐–—]?\s*\d", re.IGNORECASE)
-_KW_TITLE = ("门窗表", "门表", "窗表")
+# 编号首字母必须含 C：窗编号普遍是 C1/C0921，而旧正则只允许 M/T 开头
+# （[C] 被放在 M/T 之后当可选位），于是 "C1" 根本匹配不上 ->
+# 整张表的窗行一条都读不出来。真图实测：r6 门窗表 5 个门行全中、4 个窗行全丢。
+_CODE_RE = re.compile(r"^[MTLC][\s\-‐–—]*[C]?[\s\-‐–—]*\d", re.IGNORECASE)
+# 标题词收紧：旧值含 "门表"/"窗表"，会命中设计说明里的句子
+# （r4 实测标题被认成 "400x400 3.门窗尺寸，划分和要求均详…"，然后从说明文字里
+#  造出 26 条假数据）。只认完整的"门窗表"，且要求它像标题而不像句子。
+_KW_TITLE = ("门窗表", "门窗明细表")
+_TITLE_MAX_LEN = 16
 _KW_HEADER = ("洞口尺寸", "门窗名称", "编号")
 
 
@@ -68,6 +75,22 @@ def _row_text(row):
     return " ".join(t for _, t in row)
 
 
+def _kind_of(code, fallback=None):
+    u"""门窗类别**以编号前字母为准**：M=门、C=窗（中文图通用约定）。
+
+    旧实现只靠"门"/"窗"分隔行切换 kind，而 `_cluster_rows` 按 y 降序处理行。
+    真图实测（r6 门窗表）：窗块在 y 上排在"窗"标记**之上**，于是所有 C 行
+    处理完才翻到 window —— 13 条里 9 条被标成 door，包括 C1 3000x2700 这种
+    一眼是窗的行。表格版式千变万化，编号前缀却是行内自带、不会错的证据。
+    """
+    c = (code or u"").strip().upper()
+    if c.startswith(u"C"):
+        return u"window"
+    if c.startswith(u"M") or c.startswith(u"T"):
+        return u"door"
+    return fallback or u"door"
+
+
 def parse_dxf(path, verbose=False):
     import ezdxf
     doc = ezdxf.readfile(path)
@@ -91,13 +114,13 @@ def parse_dxf(path, verbose=False):
         tol = max(120.0, min(900.0, med * 0.6))
     rows = _cluster_rows(cells, tol)
 
-    # 1) 标题行
+    # 1) 标题行：必须像标题（短），不能是说明句
     title = ""
     for r in rows:
-        txt = _row_text(r)
+        txt = _row_text(r).strip()
         for kw in _KW_TITLE:
-            if kw in txt:
-                title = txt.strip()
+            if kw in txt and len(txt) <= _TITLE_MAX_LEN:
+                title = txt
                 break
         if title:
             break
@@ -108,10 +131,18 @@ def parse_dxf(path, verbose=False):
     for r in rows:
         txt = _row_text(r)
         stripped = [t for _, t in r]
-        # 类别切换行：整行只有"门"或"窗"（或带数量类字样）
-        if len(stripped) <= 3 and stripped and stripped[0] in _KIND_MARK:
-            kind = u"door" if stripped[0] == u"门" else u"window"
-            continue
+        # 类别切换行：短行里出现单独的"门"/"窗"即切换。
+        # 旧写法要求 stripped[0] 就是它——真图表体常把"门"和序号/表头挤在同一行，
+        # 于是 kind 永远停在默认 door，窗被当成门。
+        if stripped and len(stripped) <= 4:
+            _sw = None
+            for _t0 in stripped:
+                if _t0.strip() in _KIND_MARK:
+                    _sw = u"door" if _t0.strip() == u"门" else u"window"
+                    break
+            if _sw:
+                kind = _sw
+                continue
         # 表头行跳过
         if any(kw in txt for kw in _KW_HEADER):
             continue
@@ -123,21 +154,51 @@ def parse_dxf(path, verbose=False):
                 break
         if not code_cell:
             continue
-        # 洞口尺寸
+        # 洞口尺寸：两种版式都要认
+        #  (a) 一格内写 "1000x2100"
+        #  (b) 宽、高是**两个独立单元格** —— 真图实测这才是主流。
+        #      2026-10-11 拿 6 张真图跑这个解析器：5 张出 0 条，1 张出 8 条垃圾。
+        #      查下来 r6 的门窗表结构完好（序号|编号|宽|高|数量|类型），
+        #      编号列匹配得上，但旧代码只认 (a)，于是 `if size is None: continue`
+        #      把每一行都跳过了 —— 整张表一条都读不出来。
+        #      列位置实测：序号 x≈35902、编号 37393、宽 38692、高 40196、
+        #      数量 42048、类型 43550。序号在编号**左侧**，所以只取编号右侧的数字
+        #      就自动排除；宽高是 3~4 位且落在洞口尺寸合理区间，数量是 1~2 位整数。
         size = None
-        for _, t in r:
-            m = _SIZE_RE.search(t)
-            if m:
-                size = (int(m.group(1)), int(m.group(2)))
+        dims = []
+        counts = []
+        code_x = None
+        for x, t in r:
+            if t == code_cell:
+                code_x = x
                 break
-        # 数量列：纯数字(可带 x4) 或整数；合计取最后一个纯整数
-        nums = [t for _, t in r if re.fullmatch(r"\d{1,4}([xX]\d{1,2})?", t)]
+        for x, t in r:
+            if code_x is not None and x <= code_x:
+                continue
+            m = _SIZE_RE.search(t)
+            if m and size is None:
+                size = (int(m.group(1)), int(m.group(2)))
+                continue
+            # re.fullmatch 是 Py3-only（IPY 2.7 运行时 AttributeError、编译期
+            # 干净）——接进按钮前必须换掉。单元格文本无换行，match+$ 锚尾等价。
+            ts = t.strip()
+            if re.match(r"\d{3,4}$", ts):
+                v = int(ts)
+                if 200 <= v <= 9000:
+                    dims.append(v)
+            elif re.match(r"\d{1,4}([xX]\d{1,2})?$", ts):
+                counts.append(ts)
+        if size is None and len(dims) >= 2:
+            size = (dims[0], dims[1])
+            dims = dims[2:]
+        # 数量列：编号右侧剩下的 1~2 位整数；合计取最后一个
+        nums = counts
         total = nums[-1] if nums else ""
         # 图集引用：编号列右侧的短文本
         idx = [t for _, t in r].index(code_cell)
         tail = [t for _, t in r][idx + 1:]
         std = [t for t in tail if not _SIZE_RE.search(t)
-               and not re.fullmatch(r"\d{1,4}([xX]\d{1,2})?", t)]
+               and not re.match(r"\d{1,4}([xX]\d{1,2})?$", t.strip())]
         # 类型名 = tail 里最后一个中文项（如"镶板门"）
         type_name = ""
         for t in reversed(tail):
@@ -147,7 +208,7 @@ def parse_dxf(path, verbose=False):
         if size is None:
             continue
         items.append({
-            "kind": kind or "door",
+            "kind": _kind_of(code_cell, kind),
             "code": code_cell,
             "width_mm": size[0],
             "height_mm": size[1],
@@ -157,10 +218,16 @@ def parse_dxf(path, verbose=False):
             "std_ref": std[:4],
             "raw_row": [t for _, t in r],
         })
+    # 没找到标题就**不出数据**。宁可空手，不可造假：
+    # r4 实测没有门窗表、只有设计说明，旧代码从说明文字里造出 26 条自相矛盾的
+    # 行（M0921 400x400、kind=door 而类型名"铝合金窗"、C5824 5800x2400）。
+    if not title:
+        items = []
     if verbose:
         sys.stderr.write("[door_schedule] rows=%d items=%d title=%s\n"
                          % (len(rows), len(items), title))
-    return {"title": title, "source": os.path.basename(path), "items": items}
+    return {"title": title, "source": os.path.basename(path), "items": items,
+            "rejected_reason": (u"" if title else u"未找到门窗表标题")}
 
 
 def main():

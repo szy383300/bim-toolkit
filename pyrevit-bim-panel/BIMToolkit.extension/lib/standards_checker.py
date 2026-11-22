@@ -10,7 +10,11 @@ standards_checker.py -- 规范审查引擎。
   5. 面积 (GBT50353)
 
 IronPython 2.7 兼容：无 f-string，unicode 安全。
+除法一律真除（`from __future__ import division`）—— 本模块要算层高平均值、
+跨厚比这类比值，整数除法会把 8000/3 变成 2666，也会让"密度型"判据静默归零
+（bimhealth 已因此踩过一次，真 IPY2.7 实测 50/770*100.0 -> 0.0）。
 """
+from __future__ import division
 import os
 import json
 
@@ -53,51 +57,105 @@ except Exception:
 
 FT_PER_MM = 1.0 / 304.8
 
+# 名称里带这些词的标高不是"层"，是屋顶/雨篷这类构件的锚点。
+# 只作为**排除**线索使用，不反过来当作楼层依据；判定依据见 n_storeys_with_content。
+_NON_STOREY_MARKS = (u"屋顶", u"屋面", u"雨篷", u"雨棚", u"吊顶", u"坡道",
+                     "ROOF", "Roof", "CANOPY", "Ceiling", "RAMP")
+
 
 def mm(ft_val):
     return ft_val / FT_PER_MM
 
 
+def _level_host_count(doc, level_id):
+    u"""该标高上挂着的实例构件数。返回 -1 表示取不到（区分 0 与"不知道"）。"""
+    try:
+        col = DB.FilteredElementCollector(doc) \
+            .WherePasses(DB.ElementLevelFilter(level_id)) \
+            .WherePasses(DB.ElementIsElementTypeFilter(True))
+        return len(to_element_list(col))
+    except Exception:
+        return -1
+
+
+def _is_storey_name(name):
+    for mark in _NON_STOREY_MARKS:
+        if mark and mark in name:
+            return False
+    return True
+
+
 def extract_model_params(doc):
-    u"""从当前模型提取关键参数，返回 dict。"""
+    u"""从当前模型提取关键参数。
+
+    2026-10-07 真机核对后重写的三条原则：
+      1. **不再用 len(levels)-1 当层数** —— 屋顶/雨篷标高也被算了进去。
+         改为同时给出 n_levels / n_storeys，并说明依据，让人能否决。
+      2. **取不到的值写 None 并登记到 unavailable**，不再用 0 / "" 冒充
+         "算出来是 0"。0 和"没数据"在审查里是两件完全不同的事。
+      3. 层高只在**楼层之间**算，退化值（<300mm）丢掉，避免把 0 和 500
+         这种锚点差当成层高喂给后续判定。
+    """
     params = {
+        "n_levels": 0,
         "total_floors": 0,
+        "floor_basis": u"",
         "floor_heights_mm": [],
         "building_height_mm": 0,
         "wall_thickness_mm": 0,
-        "structural_type": u"",
+        "wall_types_seen": 0,
+        "structural_type": None,
         "has_fire_rating": False,
-        "window_area_ratio": 0.0,
-        "total_area_sqm": 0.0,
+        "window_area_ratio": None,
+        "total_area_sqm": None,
+        "footprint_sqm": None,
         "location": u"",
     }
+    unavailable = []
 
     levels = to_element_list(
         DB.FilteredElementCollector(doc).OfClass(DB.Level))
-    params["total_floors"] = max(0, len(levels) - 1)
+    levels = sorted(levels, key=lambda l: l.Elevation)
+    params["n_levels"] = len(levels)
+
+    storeys = []
+    for lv in levels:
+        name = to_text(lv.Name)
+        if not _is_storey_name(name):
+            continue
+        n = _level_host_count(doc, lv.Id)
+        if n == 0:
+            continue          # 有标高但上面没有任何构件：不算已建成的层
+        storeys.append(lv)
+    params["total_floors"] = len(storeys)
+    params["floor_basis"] = (
+        u"%d 个标高，其中 %d 个按「名称非屋顶类 + 上面有构件」算作楼层"
+        % (len(levels), len(storeys)))
 
     heights = []
-    sorted_levels = sorted(levels, key=lambda l: l.Elevation)
-    for i in range(1, len(sorted_levels)):
-        h_mm = mm(sorted_levels[i].Elevation - sorted_levels[i-1].Elevation)
-        heights.append(round(h_mm))
+    for i in range(1, len(storeys)):
+        h_mm = mm(storeys[i].Elevation - storeys[i - 1].Elevation)
+        if h_mm >= 300.0:
+            heights.append(round(h_mm))
     params["floor_heights_mm"] = heights
+    if len(storeys) < 2:
+        unavailable.append(u"floor_heights_mm（楼层不足 2 个，算不出层高）")
 
-    if sorted_levels:
-        top_elev = sorted_levels[-1].Elevation
-        base_elev = sorted_levels[0].Elevation
-        params["building_height_mm"] = round(mm(top_elev - base_elev))
+    if levels:
+        params["building_height_mm"] = round(
+            mm(levels[-1].Elevation - levels[0].Elevation))
 
     walls = to_element_list(
         DB.FilteredElementCollector(doc).OfClass(DB.Wall)
         .WhereElementIsNotElementType())
+    thicknesses = []
     if walls:
-        try:
-            w = walls[0]
-            wt = doc.GetElement(w.WallType.Id)
-            if wt:
-                # 墙厚取类型总宽 wt.Width（此前误取"单层最厚值"，
-                # 多构造层墙 200=100+50+50 会被读成 100 导致误判）
+        seen = set()
+        for w in walls:
+            try:
+                wt = doc.GetElement(w.WallType.Id)
+                if wt is None:
+                    continue
                 try:
                     total_mm = round(mm(wt.Width))
                 except Exception:
@@ -108,15 +166,23 @@ def extract_model_params(doc):
                         total_mm = round(sum(
                             mm(cs.GetLayerWidth(i))
                             for i in range(cs.LayerCount)))
-                if total_mm > params["wall_thickness_mm"]:
-                    params["wall_thickness_mm"] = total_mm
-        except Exception:
-            pass
+                if total_mm > 0:
+                    thicknesses.append(total_mm)
+                    seen.add(to_text(wt.Name))
+            except Exception:
+                continue
+        if thicknesses:
+            # 取最厚者作为审查对象：限值都是"不得小于"，取最薄会把合格判成不合格
+            params["wall_thickness_mm"] = max(thicknesses)
+            params["wall_types_seen"] = len(seen)
+        else:
+            unavailable.append(u"wall_thickness_mm（墙类型宽度都取不到）")
+    else:
+        unavailable.append(u"wall_thickness_mm（模型里没有墙）")
 
     for w in walls:
         try:
-            p = w.get_Parameter(
-                DB.BuiltInParameter.FIRE_RATING_PARAM)
+            p = w.get_Parameter(DB.BuiltInParameter.FIRE_RATING_PARAM)
             if p and p.HasValue:
                 v = p.AsString()
                 if v and v.strip():
@@ -125,8 +191,8 @@ def extract_model_params(doc):
         except Exception:
             pass
 
-    length_mm = 0
-    width_mm = 0
+    length_mm = 0.0
+    width_mm = 0.0
     try:
         if walls:
             xs, ys = [], []
@@ -144,12 +210,33 @@ def extract_model_params(doc):
     except Exception:
         pass
 
-    params["footprint_sqm"] = round(
-        length_mm * width_mm / 1e6, 1)
-    params["total_area_sqm"] = round(
-        params["footprint_sqm"] * max(1, params["total_floors"]), 1)
+    if length_mm > 0 and width_mm > 0:
+        params["footprint_sqm"] = round(length_mm * width_mm / 1e6, 1)
+        params["total_area_sqm"] = round(
+            params["footprint_sqm"] * max(1, params["total_floors"]), 1)
+        params["footprint_basis"] = u"前 20 堵墙外包尺寸估算，非按规范计算规则"
+    else:
+        unavailable.append(u"footprint_sqm / total_area_sqm（取不到墙定位线）")
 
+    unavailable.append(u"structural_type（模型里没有可读的结构体系字段）")
+    unavailable.append(u"window_area_ratio（未实现窗面积统计）")
+    params["unavailable"] = unavailable
     return params
+
+
+def _not_checked(item, standard, reason):
+    u"""三态里的第三态：**没检查**，而不是"检查了且通过"。
+
+    此前这些情况的表现是"少一条记录" —— 记录少了，扣分自然也没了，
+    于是"整个节能类别一条都没跑"能算出 95 分"优秀"。
+    """
+    return {
+        "item": item,
+        "status": u"not_checked",
+        "message": u"未检查：%s" % reason,
+        "standard": standard,
+        "suggestion": u"",
+    }
 
 
 def check_fire(params, standards):
@@ -161,7 +248,11 @@ def check_fire(params, standards):
     floors = params.get("total_floors", 0)
 
     max_h = fire.get("max_height_m", 100) * 1000
-    if height_mm > max_h:
+    if height_mm <= 0:
+        checks.append(_not_checked(
+            u"建筑高度", u"GB50016-2014",
+            u"模型里取不到标高，算不出建筑高度"))
+    elif height_mm > max_h:
         checks.append({
             "item": u"建筑高度",
             "status": u"fail",
@@ -213,7 +304,10 @@ def check_seismic(params, standards):
     max_h = seismic.get("max_height_m", 50) * 1000
     struct_type = seismic.get("applicable_struct_type", u"")
 
-    if height_mm > max_h:
+    if height_mm <= 0:
+        checks.append(_not_checked(
+            u"抗震限高", u"GB50011-2010", u"取不到建筑高度"))
+    elif height_mm > max_h:
         checks.append({
             "item": u"抗震限高",
             "status": u"fail",
@@ -255,7 +349,11 @@ def check_structure(params, standards):
 
     wall_t = params.get("wall_thickness_mm", 0)
     min_t = struct.get("min_wall_thickness_mm", 160)
-    if wall_t > 0 and wall_t < min_t:
+    if wall_t <= 0:
+        checks.append(_not_checked(
+            u"墙体厚度", u"GB50010-2010",
+            u"模型里没有墙，或墙类型宽度取不到"))
+    elif wall_t < min_t:
         checks.append({
             "item": u"墙体厚度",
             "status": u"fail",
@@ -297,7 +395,11 @@ def check_area(params, standards):
     footprint = params.get("footprint_sqm", 0)
     floors = params.get("total_floors", 0)
 
-    if total > 0:
+    if not total:
+        checks.append(_not_checked(
+            u"建筑面积", u"GBT50353-2013",
+            u"取不到墙定位线，算不出外包面积"))
+    else:
         checks.append({
             "item": u"建筑面积",
             "status": u"info",
@@ -317,24 +419,32 @@ def check_energy(params, standards):
 
     wall_t = params.get("wall_thickness_mm", 0)
     min_insulation = energy.get("min_wall_insulation_mm", 0)
-    if min_insulation > 0 and wall_t > 0:
-        if wall_t < min_insulation:
-            checks.append({
-                "item": u"墙体保温",
-                "status": u"warning",
-                "message": u"墙厚 %dmm 可能不满足节能要求 (建议保温层 >= %dmm)" % (
-                    wall_t, min_insulation),
-                "standard": energy.get("standard_ref", u"地方节能标准"),
-                "suggestion": u"核实外墙保温构造是否满足地方节能要求",
-            })
-        else:
-            checks.append({
-                "item": u"墙体保温",
-                "status": u"info",
-                "message": u"墙厚 %dmm，需进一步核算传热系数 U 值" % wall_t,
-                "standard": energy.get("standard_ref", u"地方节能标准"),
-                "suggestion": u"建议进行热工计算，确认 U 值满足限值",
-            })
+    if not min_insulation:
+        checks.append(_not_checked(
+            u"墙体保温", energy.get("standard_ref", u"地方节能标准"),
+            u"标准库里 min_wall_insulation_mm 是 %r，等于没有阈值 —— "
+            u"这一类从未真正检查过，不要当成通过" % (min_insulation,)))
+    elif wall_t <= 0:
+        checks.append(_not_checked(
+            u"墙体保温", energy.get("standard_ref", u"地方节能标准"),
+            u"取不到墙厚"))
+    elif wall_t < min_insulation:
+        checks.append({
+            "item": u"墙体保温",
+            "status": u"warning",
+            "message": u"墙厚 %dmm 可能不满足节能要求 (建议保温层 >= %dmm)" % (
+                wall_t, min_insulation),
+            "standard": energy.get("standard_ref", u"地方节能标准"),
+            "suggestion": u"核实外墙保温构造是否满足地方节能要求",
+        })
+    else:
+        checks.append({
+            "item": u"墙体保温",
+            "status": u"info",
+            "message": u"墙厚 %dmm，需进一步核算传热系数 U 值" % wall_t,
+            "standard": energy.get("standard_ref", u"地方节能标准"),
+            "suggestion": u"建议进行热工计算，确认 U 值满足限值",
+        })
 
     return checks
 
@@ -355,18 +465,31 @@ def run_review(doc, location=u"", standards=None):
     all_checks.extend(check_area(params, standards))
     all_checks.extend(check_energy(params, standards))
 
-    fail_count = sum(1 for c in all_checks if c["status"] == u"fail")
-    warn_count = sum(1 for c in all_checks if c["status"] == u"warning")
-    score = max(0, min(100, 100 - fail_count * 20 - warn_count * 5))
+    # 计分只覆盖**真正完成判定**的项。not_checked 不参与扣分，但必须显式出现在
+    # 报告里并压低可信度 —— 否则"少一条记录"就等于"少一处问题"，
+    # 整个节能类别没跑也能拿 95 分。
+    judged = [c for c in all_checks
+              if c["status"] in (u"pass", u"warning", u"fail")]
+    not_checked = [c for c in all_checks if c["status"] == u"not_checked"]
+    fail_count = sum(1 for c in judged if c["status"] == u"fail")
+    warn_count = sum(1 for c in judged if c["status"] == u"warning")
 
-    if score >= 90:
-        grade = u"优秀"
-    elif score >= 75:
-        grade = u"良好"
-    elif score >= 60:
-        grade = u"及格"
+    if not judged:
+        score = None
+        grade = u"无法评级：没有任何一项完成判定"
     else:
-        grade = u"需整改"
+        score = max(0, min(100, 100 - fail_count * 20 - warn_count * 5))
+        if score >= 90:
+            grade = u"优秀"
+        elif score >= 75:
+            grade = u"良好"
+        elif score >= 60:
+            grade = u"及格"
+        else:
+            grade = u"需整改"
+        if not_checked:
+            grade = u"%s（仅 %d/%d 项完成判定）" % (
+                grade, len(judged), len(judged) + len(not_checked))
 
     feedback = []
     for c in all_checks:
@@ -391,6 +514,8 @@ def run_review(doc, location=u"", standards=None):
         "model_params": params,
         "fail_count": fail_count,
         "warn_count": warn_count,
+        "judged_count": len(judged),
+        "not_checked": not_checked,
     }
 
 

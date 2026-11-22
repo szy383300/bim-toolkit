@@ -427,7 +427,26 @@ def confirm_and_run(code_text, instruction, attempt=1):
 
     t = Transaction(doc, "AI 指令")
     t.Start()
-    ns = dict(globals())
+    # v3: exec 命名空间收窄（2026-10-15）。原先 ns = dict(globals())，而本模块
+    # 顶层已 import os/sys/traceback/llm_client——生成的代码不写任何 import
+    # 也能 os.system(...)。护栏只拦 import **语句**，拦不住命名空间里现成的
+    # 模块（实测 5/7 攻击样本绕过）。白名单只暴露 SYSTEM_PROMPT 声明过的
+    # doc / uidoc / __revit__ / to_text + 预导入的 Revit DB/UI 命名空间；
+    # 需要别的模块必须显式 import，而 import os 一类会被 ai_code_guard 拦下。
+    # 边界：__builtins__ 仍完整（AI 代码需要 len/range/Exception 等内建），
+    # 刻意用 __builtins__ 绕行属明确恶意，最终还有人工确认框——护栏的
+    # 定位本来就是"挡顺手越界"，不是沙箱（见 ai_code_guard.py 的说明）。
+    ns = {
+        "doc": doc,
+        "uidoc": uidoc,
+        "__revit__": __revit__,
+        "to_text": to_text,
+    }
+    try:
+        exec(u"from Autodesk.Revit.DB import *", ns)
+        exec(u"from Autodesk.Revit.UI import *", ns)
+    except Exception:
+        pass
     try:
         exec(code_text, ns)
         status = t.Commit()

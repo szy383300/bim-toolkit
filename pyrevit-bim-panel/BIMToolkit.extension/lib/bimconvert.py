@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 u"""
 bimconvert.py —— DWG 翻模的**统一入口**（薄封装，本身不含实现）。
 
@@ -28,22 +28,25 @@ from bimconv_geom import (MM_TO_FT, MIN_WALL_SEGMENT_LEN, MIN_WALL_TOTAL_LEN,
                           _num_ok, _xyz, _point_of)
 
 # ---- 规则与计划层 ----
-from bimconv_rules import (RELIABILITY, load_rules, plan_from_json, match_rule)
+from bimconv_rules import (RELIABILITY, load_rules, plan_from_json, match_rule,
+                           apply_opening_codes, decode_opening_code)
 
 # ---- 墙线处理层 ----
-from bimconv_walls import (consolidate_walls, _join_walls,
+from bimconv_walls import (consolidate_walls, consolidate_grids, _join_walls,
                            _build_wall_index, _nearest_wall,
-                           slab_plans_from_wall_loops)
+                           slab_plans_from_wall_loops, subdrawing_clusters,
+                           subdrawing_summary)
 
 # ---- 构件创建层 ----
-from bimconv_elements import (_level_id, _wall_type, _column_symbol, _floor_type,
+from bimconv_elements import (_level_id, _wall_type, _column_pool,
+                              pick_column_symbol, column_symbol_name, _floor_type,
                               _create_grid, _create_wall, _create_column,
                               _create_slab, _create_point_symbol, _create_stair,
                               _create_door_window, _create_room)
 
 # ---- 构建编排层 ----
 from bimconv_build import (create_elements, _Batch, _WarnSuppressor,
-                           _HAVE_FAILURES)
+                           _HAVE_FAILURES, is_by_design_skip)
 
 # DB 便捷重导出（旧版 bimconvert 在模块级就暴露 DB，保持兼容）
 try:
@@ -67,8 +70,15 @@ __all__ = [
     "MM_TO_FT", "MIN_WALL_SEGMENT_LEN", "MIN_WALL_TOTAL_LEN", "RELIABILITY",
     # 规则与计划
     "load_rules", "plan_from_json", "match_rule",
+    "apply_opening_codes", "decode_opening_code",
     # 墙线
-    "consolidate_walls", "slab_plans_from_wall_loops",
+    "consolidate_walls", "consolidate_grids", "slab_plans_from_wall_loops",
+    # 一张 DWG 里并排画了多张图 → 预览要如实说清会被叠成几层
+    "subdrawing_clusters", "subdrawing_summary",
+    # 预览要如实说出"柱会统一建成哪个类型"，所以选择器得能对外调用
+    "pick_column_symbol", "column_symbol_name",
     # 构建
     "create_elements",
+    # 报表要把「按所选模式跳过」和「真建不出来」分开算
+    "is_by_design_skip",
 ]
